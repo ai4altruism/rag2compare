@@ -1,164 +1,232 @@
-# 📚 Rag2Compare
+# Rag2Compare
 
-A Retrieval-Augmented Generation (RAG) application for extracting information from PDF documents using advanced chunking, OpenAI embeddings, ChromaDB for vector storage, LLM-based re-ranking, and question answering.
+A production-grade Retrieval-Augmented Generation (RAG) system for querying PDF document corpora with grounded, cited answers.
 
-## Features
+Upload PDFs, ask natural-language questions, and get streaming answers that cite their sources — page numbers, section headers, and relevance scores included. The system runs entirely self-hosted via Docker Compose; cloud APIs are used only for LLM/embedding calls.
 
-- **Advanced PDF Processing**: Upload, extract text, and chunk using RecursiveCharacterTextSplitter for more semantically meaningful chunks
-- **OpenAI Embeddings**: Generate high-quality embeddings using OpenAI's latest models (text-embedding-3-small/large)
-- **ChromaDB Vector Storage**: Store and retrieve document chunks efficiently using ChromaDB
-- **LLM Re-ranking**: Use a language model to improve the relevance of retrieved chunks
-- **Question Answering**: Generate concise answers based on document context
-- **Web Interface**: Simple Streamlit UI for document upload and Q&A
+## Architecture
 
-## Setup Instructions
+```
+┌─────────────────────────────────────┐
+│  Next.js 15 Frontend  (port 3000)   │
+│  Chat · Documents · Collections ·   │
+│  Settings                           │
+└────────────────┬────────────────────┘
+                 │ REST + WebSocket
+┌────────────────▼────────────────────┐
+│  FastAPI Backend  (port 8000)       │
+│                                     │
+│  Ingestion pipeline                 │
+│    Docling PDF parsing              │
+│    Document-aware chunking          │
+│    Contextual enrichment            │
+│    Dense + sparse embedding         │
+│                                     │
+│  Query pipeline                     │
+│    Multi-query expansion            │
+│    Hybrid search (dense + BM25)     │
+│    Reranking (Cohere / local)       │
+│    Corrective RAG loop              │
+│    Streaming answer generation      │
+└──────┬───────────────────┬──────────┘
+       │                   │
+┌──────▼──────┐   ┌────────▼────────┐
+│  Qdrant     │   │  SQLite         │
+│  (port 6333)│   │  metadata DB    │
+│  vectors +  │   │  documents,     │
+│  sparse idx │   │  conversations  │
+└─────────────┘   └─────────────────┘
+```
 
-### 1. Clone the Repository
+All LLM, embedding, and reranking providers are swappable via configuration. Default providers: Anthropic Claude (generation), OpenAI `text-embedding-3-large` (embeddings), Cohere Rerank 3.5 (reranking).
+
+## Tech Stack
+
+| Layer | Technology | Version |
+|---|---|---|
+| Frontend framework | Next.js (App Router) | 15.3.1 |
+| Frontend UI | shadcn/ui + Tailwind CSS | — |
+| State management | Zustand | 5.x |
+| Data fetching | TanStack Query | 5.x |
+| Backend framework | FastAPI | >=0.115 |
+| Backend language | Python | >=3.11 |
+| PDF parsing | Docling (primary), PyMuPDF4LLM (fallback) | >=2.0 / >=0.0.17 |
+| Vector database | Qdrant | latest (Docker) |
+| Metadata database | SQLite (default) / PostgreSQL (optional) | — |
+| ORM | SQLAlchemy 2.0 (async) | >=2.0.36 |
+| LLM routing | LiteLLM | >=1.55 |
+| Embeddings | OpenAI / Cohere / Sentence-Transformers / Ollama | — |
+| Reranking | Cohere Rerank 3.5 / cross-encoder (local) | — |
+| Package manager (backend) | uv | — |
+| Package manager (frontend) | pnpm | — |
+
+## Repository Layout
+
+```
+rag2compare/
+├── backend/            FastAPI service (Python)
+│   ├── src/            Application source
+│   │   ├── api/        Route handlers and WebSocket endpoint
+│   │   ├── config.py   Pydantic Settings (env vars + optional config.yaml)
+│   │   ├── models/     SQLAlchemy ORM models
+│   │   ├── pipelines/  Ingestion and query pipeline stages
+│   │   ├── providers/  Pluggable LLM, embedding, and reranker providers
+│   │   ├── schemas/    Pydantic request/response schemas
+│   │   └── storage/    Qdrant client wrapper and DB session management
+│   ├── tests/          pytest unit + integration tests
+│   ├── Dockerfile
+│   └── pyproject.toml
+├── frontend/           Next.js application
+│   ├── src/
+│   │   ├── app/        App Router pages (/, /documents, /collections, /settings)
+│   │   ├── components/ React components (chat, documents, layout, ui)
+│   │   ├── lib/        API client and WebSocket client
+│   │   ├── providers/  TanStack Query provider
+│   │   └── stores/     Zustand stores
+│   └── package.json
+├── docs/
+│   ├── SRS.md          System Requirements Specification (v2.0 source of truth)
+│   └── SDP.md          Software Development Plan (sprint breakdown)
+├── legacy/             v1 Streamlit prototype (preserved for reference, not active)
+├── docker-compose.yml  Primary deployment configuration
+├── .env.example        Environment variable template
+└── data/               Runtime data — gitignored (uploads, metadata.db)
+```
+
+## Quickstart (Docker Compose)
+
+This is the recommended way to run the full stack.
+
+### Prerequisites
+
+- Docker and Docker Compose
+- API keys for your chosen providers (see [Environment Variables](#environment-variables))
+
+### 1. Clone and configure
 
 ```bash
 git clone https://github.com/ai4altruism/rag2compare.git
 cd rag2compare
+cp .env.example .env
 ```
 
-### 2. Create a Virtual Environment (Recommended)
+Edit `.env` and fill in your API keys.
+
+### 2. Start backend and Qdrant
+
+The default compose profile starts the FastAPI backend and Qdrant only. The frontend is included under the `full` profile (see note below).
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+docker compose up
 ```
 
-### 3. Install Dependencies
+The backend API will be available at `http://localhost:8000`.
+Interactive API docs are at `http://localhost:8000/docs`.
+Qdrant dashboard is at `http://localhost:6333/dashboard`.
+
+### 3. Start the full stack (backend + frontend + Qdrant)
 
 ```bash
-pip install -r requirements.txt
+docker compose --profile full up
 ```
 
-### 4. Configure Environment Variables
+The Next.js frontend will be available at `http://localhost:3000`.
 
-Create a `.env` file in the project root with your API keys and configuration:
+> **Note:** The frontend `Dockerfile` has not yet been added to the repository. The `--profile full` command will fail until it is created. Use the local development path below to run the frontend in the meantime.
 
-```plaintext
-# LLM API Configuration
-LLM_API_KEY=your_api_key_here
-LLM_API_BASE_URL=https://api.provider.com/v1
-LLM_MODEL_NAME=model_name_here
-
-# OpenAI API Configuration (for embeddings)
-OPENAI_API_KEY=your_openai_api_key_here
-
-# Vector Database Configuration
-CHUNK_SIZE=1000
-CHUNK_OVERLAP=200
-EMBEDDING_MODEL=text-embedding-3-small
-EMBEDDING_DIMENSIONS=1536  # Optional: Can be reduced for better efficiency
-
-# Re-ranking System Prompt
-RERANKING_SYSTEM_PROMPT=You are an expert at analyzing document chunks for relevance to a query. For each document chunk, assign a relevance score from 0-10. Focus on semantic relevance rather than keyword matching. A document with a score of 10 perfectly answers the query, while a score of 0 means it's completely irrelevant. Explain your reasoning for each score.
-
-# Answer Generation System Prompt
-ANSWER_SYSTEM_PROMPT=You are a helpful assistant that answers questions based on the provided document context. Only answer what can be inferred from the context. If the context doesn't provide enough information to answer the question, state that clearly. Do not make up information.
-```
-
-### 5. Create Required Directories
-
-The application will automatically create the necessary directories, but you can create them manually if needed:
+### Optional: local LLM serving via Ollama
 
 ```bash
-mkdir -p data/pdfs
-mkdir -p data/chroma_db
+docker compose --profile local-llm up
 ```
 
-### 6. Run the Application
+This starts an Ollama container on port 11434. Configure `LLM_PROVIDER=ollama` and the desired model in `.env`.
+
+## Local Development
+
+### Backend
+
+Requires Python >=3.11 and [uv](https://github.com/astral-sh/uv).
 
 ```bash
-streamlit run app.py
+cd backend
+uv sync
+uv run uvicorn src.main:app --reload --port 8000
 ```
 
-This will start the Streamlit server and open the application in your default web browser.
+Run tests:
 
-## Using the Application
-
-1. **Upload Documents**: Use the sidebar to upload PDF documents.
-2. **Ask Questions**: Type your questions in the chat input at the bottom of the page.
-3. **View Answers**: See the AI-generated answers based on your documents.
-4. **Manage Documents**: Clear the document index using the button in the sidebar if needed.
-
-## How It Works
-
-1. **Document Processing Pipeline**:
-
-   - PDF documents are loaded and text is extracted
-   - Text is split into semantic chunks using RecursiveCharacterTextSplitter with natural language boundaries
-   - Chunks are stored in ChromaDB with embeddings from OpenAI's embedding models
-
-2. **Query Processing Pipeline**:
-   - User query is embedded using the same OpenAI model
-   - Similar document chunks are retrieved from ChromaDB using vector similarity search
-   - Retrieved chunks are re-ranked by the LLM based on relevance to the query
-   - The most relevant chunks are used as context for the final answer
-
-## Advanced Features
-
-### OpenAI Embeddings
-
-The application uses OpenAI's powerful embedding models for better semantic understanding:
-
-- **Configurable Models**: Choose between different OpenAI embedding models
-- **Dimension Reduction**: Optionally reduce embedding dimensions to optimize storage and cost
-- **Batch Processing**: Efficiently process documents in batches to respect API rate limits
-
-### Optimized Document Chunking
-
-- **Semantic Chunking**: Uses RecursiveCharacterTextSplitter with multiple separators
-- **Natural Boundaries**: Respects paragraphs, sentences, and other linguistic structures
-- **Configurable Parameters**: Adjust chunk size and overlap to suit your documents
-
-### ChromaDB Integration
-
-- **Persistent Storage**: Document embeddings are stored persistently for future use
-- **Efficient Retrieval**: Fast and accurate similarity search for relevant chunks
-- **Collection Management**: Create, update, and clear document collections
-
-## Customization
-
-- Adjust chunk size and overlap in the `.env` file to optimize for your documents
-- Modify system prompts to change the behavior of the re-ranking and answer generation
-- Experiment with different embedding models and dimensions for better performance or reduced cost
-- Configure batch sizes for processing large document collections
-
-## Requirements
-
-- Python 3.8+
-- Streamlit
-- PyPDF
-- OpenAI API access
-- LangChain
-- ChromaDB
-
-## Directory Structure
-
+```bash
+uv run pytest
 ```
-rag2compare/
-├── .env                     # Environment configuration file
-├── app.py                   # Main Streamlit application
-├── requirements.txt         # Project dependencies
-├── README.md                # Project documentation
-├── .gitignore               # Git ignore configuration
-├── utils/                   # Utility modules
-│   ├── __init__.py          # Make utils a proper package
-│   ├── document_processor.py # PDF loading, chunking, and embedding
-│   ├── chroma_store.py      # ChromaDB vector store operations
-│   └── llm_client.py        # LLM API client for reranking and QA
-└── data/                    # Data storage directories
-    ├── pdfs/                # Directory for uploaded PDFs
-    └── chroma_db/           # ChromaDB persistence directory
+
+Lint:
+
+```bash
+uv run ruff check src tests
 ```
+
+### Frontend
+
+Requires Node.js and [pnpm](https://pnpm.io).
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+
+The dev server runs at `http://localhost:3000` and proxies API calls to `http://localhost:8000`.
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and populate the values. All settings can also be overridden via a `config.yaml` file in the backend working directory (env vars take precedence).
+
+| Variable | Default | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | _(required for default LLM)_ | Anthropic API key |
+| `OPENAI_API_KEY` | _(required for default embeddings)_ | OpenAI API key |
+| `COHERE_API_KEY` | _(required for default reranker)_ | Cohere API key |
+| `LLM_PROVIDER` | `anthropic` | LLM provider (`anthropic`, `openai`, `ollama`, or any LiteLLM string) |
+| `LLM_MODEL` | `claude-sonnet-4-5-20250929` | Model identifier passed to LiteLLM |
+| `EMBEDDING_PROVIDER` | `openai` | Embedding provider |
+| `EMBEDDING_MODEL` | `text-embedding-3-large` | Embedding model name |
+| `EMBEDDING_DIMENSIONS` | `1024` | Vector dimensions |
+| `RERANKER_PROVIDER` | `cohere` | Reranker provider (`cohere` or `cross-encoder`) |
+| `RERANKER_MODEL` | `rerank-v3.5` | Reranker model name |
+| `QDRANT_URL` | `http://localhost:6333` | Qdrant connection URL |
+| `LOG_LEVEL` | `INFO` | Logging verbosity |
+
+See `backend/src/config.py` for the full list of configurable settings, including ingestion parameters (parser selection, chunk size, contextual enrichment toggle) and retrieval parameters (top-k, RRF k, corrective RAG threshold, context expansion mode).
+
+## API Reference
+
+The backend exposes a REST API and a WebSocket endpoint. Endpoint groups:
+
+| Group | Base path | Description |
+|---|---|---|
+| Documents | `/api/documents` | Upload, list, inspect, delete, re-ingest PDFs |
+| Collections | `/api/collections` | Create and manage document collections |
+| Query | `/api/query` | Submit queries (non-streaming REST) |
+| Query streaming | `/ws/query` | Submit queries with token-by-token streaming via WebSocket |
+| Conversations | `/api/conversations` | Create and retrieve conversation history |
+| Settings | `/api/settings` | Read and update provider configuration |
+| Health | `/api/health` | Dependency health check (Qdrant, LLM, embeddings) |
+
+Full interactive documentation is auto-generated at `http://localhost:8000/docs` when the backend is running.
+
+## Further Reading
+
+- [docs/SRS.md](docs/SRS.md) — Detailed functional and non-functional requirements, data model, and API specification
+- [docs/SDP.md](docs/SDP.md) — Sprint plan, git workflow, definition of done, and risk register
+
+## Project Status
+
+The project is mid-development. Sprints 1-6 are complete (foundation, ingestion pipeline, query pipeline with streaming and corrective RAG, Next.js scaffold). Sprint 7 (frontend feature completion) and Sprint 8 (evaluation, E2E tests, Docker Compose production config, docs) are upcoming. See [docs/SDP.md](docs/SDP.md) for the full sprint plan.
 
 ## License
 
-This project is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.en.html). Copyright (c) 2025 AI for Altruism Inc.
-
-When using or distributing this software, please attribute as follows:
+GNU General Public License v3.0. Copyright (c) 2025 AI for Altruism Inc.
 
 ```
 Rag2Compare
@@ -168,6 +236,4 @@ License: GNU GPL v3.0
 
 ## Contact
 
-For questions, suggestions, or collaboration opportunities, please contact:
-
-Email: team@ai4altruism.org
+team@ai4altruism.org
