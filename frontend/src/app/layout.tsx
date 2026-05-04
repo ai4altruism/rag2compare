@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PDF RAG",
-  description: "Retrieval-augmented generation over your PDF documents",
+  title: "Rag2Compare",
+  description: "Compare a RAG pipeline with an LLM Wiki",
 };
 
 export default function RootLayout({

@@ -1,6 +1,6 @@
 # Software Development Plan (SDP)
 
-## PDF RAG Application v2.0
+## Rag2Compare v2.0
 
 | Field | Value |
 |---|---|

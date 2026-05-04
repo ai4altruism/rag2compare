@@ -1,13 +1,13 @@
 # System Requirements Specification (SRS)
 
-## PDF RAG Application v2.0
+## Rag2Compare v2.0
 
 | Field | Value |
 |---|---|
 | **Document Version** | 1.0 |
 | **Date** | 2026-03-20 |
 | **Status** | Draft |
-| **Project** | pdf-rag-app |
+| **Project** | rag2compare |
 
 ---
 
@@ -31,7 +31,7 @@
 
 ### 1.1 Purpose
 
-This document specifies the requirements for a comprehensive rewrite of the pdf-rag-app, upgrading it from a Streamlit-based prototype to a production-grade, general-purpose Retrieval-Augmented Generation (RAG) system with a React/Next.js frontend and FastAPI backend.
+This document specifies the requirements for a comprehensive rewrite of the rag2compare project, upgrading it from a Streamlit-based prototype to a production-grade, general-purpose Retrieval-Augmented Generation (RAG) system with a React/Next.js frontend and FastAPI backend.
 
 ### 1.2 Scope
 
@@ -855,7 +855,7 @@ storage:
 ### Appendix C: Directory Structure (Target)
 
 ```
-pdf-rag-app/
+rag2compare/
 ├── docker-compose.yml
 ├── docs/
 │   ├── SRS.md                            # This document

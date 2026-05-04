@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
-    title="PDF RAG API",
+    title="Rag2Compare API",
     description="Production-grade Retrieval-Augmented Generation for PDF documents",
     version="2.0.0",
     lifespan=lifespan,
