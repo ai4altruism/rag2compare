@@ -33,7 +33,7 @@ export function Sidebar() {
       <div className="flex items-center gap-2 px-5 py-5 border-b border-sidebar-border">
         <BookOpen className="h-5 w-5 text-sidebar-primary" aria-hidden="true" />
         <span className="text-sm font-semibold tracking-tight text-sidebar-primary">
-          PDF RAG
+          Rag2Compare
         </span>
       </div>
 

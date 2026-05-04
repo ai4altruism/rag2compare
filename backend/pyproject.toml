@@ -1,7 +1,7 @@
 [project]
-name = "pdf-rag-backend"
+name = "rag2compare-backend"
 version = "2.0.0"
-description = "PDF RAG Application - Backend"
+description = "Rag2Compare - Backend"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

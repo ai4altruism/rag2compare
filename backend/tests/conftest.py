@@ -1,4 +1,4 @@
-"""Shared test fixtures for the PDF RAG backend."""
+"""Shared test fixtures for the Rag2Compare backend."""
 
 import asyncio
 from collections.abc import AsyncGenerator, Generator

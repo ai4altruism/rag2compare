@@ -1,5 +1,5 @@
 /**
- * Typed API client for the PDF RAG backend.
+ * Typed API client for the Rag2Compare backend.
  *
  * All endpoints are prefixed with /api — the Next.js dev server proxies
  * these to the FastAPI backend via next.config.ts rewrites.

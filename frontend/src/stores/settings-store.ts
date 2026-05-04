@@ -101,7 +101,7 @@ export const useSettingsStore = create<SettingsState>()(
           set({ ...DEFAULT_SETTINGS }, false, "resetToDefaults"),
       }),
       {
-        name: "pdf-rag-settings",
+        name: "rag2compare-settings",
         // Only persist non-sensitive preferences; API keys should never be stored
         partialize: (state) => ({
           backendUrl: state.backendUrl,

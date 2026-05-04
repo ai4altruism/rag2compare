@@ -1,4 +1,4 @@
-# 📚 PDF RAG Application
+# 📚 Rag2Compare
 
 A Retrieval-Augmented Generation (RAG) application for extracting information from PDF documents using advanced chunking, OpenAI embeddings, ChromaDB for vector storage, LLM-based re-ranking, and question answering.
 
@@ -16,8 +16,8 @@ A Retrieval-Augmented Generation (RAG) application for extracting information fr
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/pdf-rag-app.git
-cd pdf-rag-app
+git clone https://github.com/ai4altruism/rag2compare.git
+cd rag2compare
 ```
 
 ### 2. Create a Virtual Environment (Recommended)
@@ -138,7 +138,7 @@ The application uses OpenAI's powerful embedding models for better semantic unde
 ## Directory Structure
 
 ```
-pdf-rag-app/
+rag2compare/
 ├── .env                     # Environment configuration file
 ├── app.py                   # Main Streamlit application
 ├── requirements.txt         # Project dependencies
@@ -161,7 +161,7 @@ This project is licensed under the [GNU General Public License v3.0](https://www
 When using or distributing this software, please attribute as follows:
 
 ```
-PDF RAG Application
+Rag2Compare
 Copyright (c) 2025 AI for Altruism Inc
 License: GNU GPL v3.0
 ```
