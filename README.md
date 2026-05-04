@@ -130,9 +130,9 @@ Qdrant dashboard is at `http://localhost:6333/dashboard`.
 docker compose --profile full up
 ```
 
-The Next.js frontend will be available at `http://localhost:3000`.
-
-> **Note:** The frontend `Dockerfile` has not yet been added to the repository. The `--profile full` command will fail until it is created. Use the local development path below to run the frontend in the meantime.
+The Next.js frontend will be available at `http://localhost:3000`. Inside the
+compose network the frontend reaches the backend at `http://backend:8000` via
+the `BACKEND_URL` env var; no extra configuration is needed.
 
 ### Optional: local LLM serving via Ollama
 
