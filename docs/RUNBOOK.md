@@ -73,7 +73,7 @@ Edit `.env`:
 | `COHERE_API_KEY` | (your key) | Required for default reranker |
 | `LLM_MODEL` | `claude-opus-4-7` | Default; matches the Wiki side's answer model |
 | `ENRICHMENT_LLM_MODEL` | `claude-sonnet-4-5-20250929` | Cheaper model for per-chunk summarization during ingestion |
-| `REASONING_EFFORT` | `xhigh` | 32K thinking budget for Opus, matches Wiki side |
+| `REASONING_EFFORT` | `xhigh` | Adaptive-thinking effort tier (`output_config.effort`); matches Claude Code's xhigh preset on the Wiki side. Other tiers: `off / low / medium / high / xhigh / max`. |
 | `EMBEDDING_MODEL` | `text-embedding-3-large` | Default |
 | `RERANKER_MODEL` | `rerank-v3.5` | Default |
 

@@ -4,11 +4,11 @@
 
 | Field | Value |
 |---|---|
-| **Document Version** | 1.1 |
+| **Document Version** | 1.2 |
 | **Date** | 2026-05-04 |
 | **Status** | As-built through Sprint 7 |
 | **Companion Documents** | [SRS.md](./SRS.md) · [RUNBOOK.md](./RUNBOOK.md) |
-| **Revision history** | 1.0 (2026-03-20) Draft · 1.1 (2026-05-04) Sprint 7 expanded to capture the four-PR experiment-readiness scope (backend foundations, batch ingestion + runner CLIs, frontend pull-forward, judge tooling); §1.3 phase mapping updated; §6 risk register expanded with R9–R11. |
+| **Revision history** | 1.0 (2026-03-20) Draft · 1.1 (2026-05-04) Sprint 7 expanded to capture the four-PR experiment-readiness scope (backend foundations, batch ingestion + runner CLIs, frontend pull-forward, judge tooling); §1.3 phase mapping updated; §6 risk register expanded with R9–R11. · 1.2 (2026-05-04) S7-A1 acceptance criteria updated for adaptive thinking after a pre-execution audit caught that the as-shipped manual `budget_tokens` format would 400 on Opus 4.7. |
 
 ---
 
@@ -264,7 +264,7 @@ reviewable, tested, and merged in order.
 
 | ID | Task | SRS Refs | Acceptance |
 |---|---|---|---|
-| S7-A1 | **Default model + extended thinking** | FR-19 | `LLM_MODEL` default → `claude-opus-4-7`. New `REASONING_EFFORT` setting maps `off/low/medium/high/xhigh` → `0/4096/8192/16384/32000` budget tokens via `providers/llm/thinking.py`. `AnswerGenerator` forces `temperature=1.0` whenever thinking is enabled (Anthropic requirement); previous hardcoded `temperature=0.2` removed. Streaming asks LiteLLM for `include_usage` so the final chunk carries token counts. |
+| S7-A1 | **Default model + adaptive thinking** | FR-19 | `LLM_MODEL` default → `claude-opus-4-7`. New `REASONING_EFFORT` setting (`off`/`low`/`medium`/`high`/`xhigh`/`max`) drives `providers/llm/thinking.py`, which emits `thinking={"type":"adaptive","display":"summarized"}` plus `output_config={"effort":<tier>}` — manual `budget_tokens` is rejected with 400 on Opus 4.7. `AnswerGenerator` forces `temperature=1.0` and `max_tokens=16000` whenever thinking is enabled; previous hardcoded `temperature=0.2` removed. Streaming asks LiteLLM for `include_usage` so the final chunk carries token counts. |
 | S7-A2 | **Separate enrichment model** | FR-19.4 | New `ENRICHMENT_LLM_MODEL` setting (default `claude-sonnet-4-5-20250929`). New `create_enrichment_llm_provider(settings)` factory used by the ingestion pipeline so per-chunk summarization runs on a cheaper model than answer generation. |
 | S7-A3 | **Document tags column** | FR-16 | `Document.tags` JSON column added via idempotent `init_db()` `ALTER TABLE` upgrade (no Alembic in project today). Upload route accepts optional `tags_json` multipart form field, validated as JSON object. `DocumentResponse` exposes `tags`. |
 | S7-A4 | **Token telemetry + ingestion timing** | FR-17, FR-18 | `Message` model gains `model_used`, `latency_ms`, `prompt_tokens`, `completion_tokens`, `thinking_tokens` columns. `LiteLLMProvider.last_usage` captures Anthropic `reasoning_tokens` as `thinking_tokens`. `/query` and WebSocket emit usage in metadata. `DocumentResponse` joins the latest `IngestionJob` to expose `ingestion_started_at`, `ingestion_completed_at`, `ingestion_seconds`. |
@@ -452,7 +452,7 @@ This chain spans Sprints 1-7 and represents the core data flow from configuratio
 | R8 | **Docker Compose resource constraints on local machines** | Medium | Medium | Document minimum hardware requirements. Qdrant and Ollama are memory-hungry — provide guidance for non-GPU machines. Ollama is optional. |
 | R9 | **Same-family judge bias inflates Wiki scores** | Medium | High | Default judge is cross-family (`gpt-5` when answer model is Claude). Inter-rater reliability spot-check via `--secondary-judge gemini-2.5-pro` flags calibration drift. Decision rule: if any criterion's max-delta > 2, fall back to mean-of-judges or add a third judge. Documented in [`docs/RUNBOOK.md`](./RUNBOOK.md) §3.2. |
 | R10 | **Asymmetric ingestion-cost confounds H3** | Medium | Medium | RAG side uses Sonnet 4.5 for per-chunk enrichment; Wiki side uses Opus 4.7 for full ingestion. This *is* the experiment's hypothesis (Wiki pays compilation tax upfront), but readers must understand it isn't apples-to-apples on raw cost. Writeup must explicitly call out the model choice on each side. To eliminate the asymmetry, set `ENRICHMENT_LLM_MODEL=claude-opus-4-7` and re-run. |
-| R11 | **Anthropic extended-thinking budget cap shifts** | Low | Low | The `xhigh` budget (32K tokens) is hardcoded in `providers/llm/thinking.py`. If Anthropic raises or lowers the API cap, the value can be changed in one place. Older runs remain reproducible because `metadata.reasoning_effort` and `metadata.thinking_tokens` are persisted per query. |
+| R11 | **Anthropic adaptive-thinking API drift** | Low | Medium | Adaptive thinking is recent (introduced for Opus 4.6/4.7); future model releases may change the `output_config` shape or rename the effort tiers. Mitigation: `providers/llm/thinking.py` is the single point of contact for the param shape — one helper to update. Per-query metadata records `reasoning_effort` and `thinking_tokens` so older runs remain reproducible against their original API contract. The pre-execution smoke test in [`docs/RUNBOOK.md`](./RUNBOOK.md) §0.5 catches API-shape regressions before the full corpus run. |
 
 ---
 
