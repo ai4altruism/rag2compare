@@ -46,7 +46,16 @@ class EmbeddingProvider(ABC):
 
 
 class LLMProvider(ABC):
-    """Abstract interface for LLM providers."""
+    """Abstract interface for LLM providers.
+
+    Implementations should populate `last_usage` after each generate call
+    (and after a stream is fully consumed) with whatever token counts the
+    backend reports — typically prompt_tokens, completion_tokens, and
+    thinking_tokens for Anthropic extended-thinking models. Empty when
+    the backend doesn't report usage.
+    """
+
+    last_usage: dict = {}
 
     @abstractmethod
     async def generate(self, messages: list[dict], **kwargs) -> str:

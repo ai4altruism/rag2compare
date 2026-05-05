@@ -1,6 +1,7 @@
 """Pydantic request/response schemas for the API."""
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -41,6 +42,10 @@ class DocumentResponse(BaseModel):
     chunk_count: int | None
     embedding_model: str | None
     error_message: str | None
+    tags: dict[str, Any] | None = None
+    ingestion_started_at: datetime | None = None
+    ingestion_completed_at: datetime | None = None
+    ingestion_seconds: float | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -62,6 +67,9 @@ class QueryOptions(BaseModel):
     corrective_rag: bool = True
     context_expansion: str = "parent"
     max_context_tokens: int = 8000
+    # Anthropic extended-thinking effort. None falls back to the server-side
+    # default in Settings.reasoning_effort.
+    reasoning_effort: str | None = None
 
 
 class QueryRequest(BaseModel):
@@ -87,6 +95,10 @@ class QueryMetadata(BaseModel):
     query_variations: list[str]
     latency_ms: int
     model_used: str
+    reasoning_effort: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    thinking_tokens: int | None = None
 
 
 class QueryResponse(BaseModel):
@@ -129,6 +141,8 @@ class SettingsResponse(BaseModel):
     embedding_dimensions: int
     llm_provider: str
     llm_model: str
+    enrichment_llm_model: str | None = None
+    reasoning_effort: str
     reranker_provider: str
     reranker_model: str
     parser: str
