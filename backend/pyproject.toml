@@ -42,6 +42,7 @@ local = [
 [project.scripts]
 rag2compare-ingest = "scripts.ingest_corpus:main"
 rag2compare-run = "scripts.run_experiment:main"
+rag2compare-judge = "scripts.judge_runs:main"
 
 [build-system]
 requires = ["hatchling"]
