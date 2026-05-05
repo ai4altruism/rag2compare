@@ -4,10 +4,11 @@
 
 | Field | Value |
 |---|---|
-| **Document Version** | 1.0 |
-| **Date** | 2026-03-20 |
-| **Status** | Draft |
+| **Document Version** | 1.1 |
+| **Date** | 2026-05-04 |
+| **Status** | As-built (Sprint 7 complete) |
 | **Project** | rag2compare |
+| **Revision history** | 1.0 (2026-03-20) Draft · 1.1 (2026-05-04) Adds §4.5 Experiment Harness, §9.3 Experiment Evaluation; updates §6 to Opus 4.7 default; updates §7.1 schema and §8.2 response shape for as-built fields. |
 
 ---
 
@@ -17,11 +18,19 @@
 2. [System Overview](#2-system-overview)
 3. [Architecture](#3-architecture)
 4. [Functional Requirements](#4-functional-requirements)
+   - 4.1 Document Ingestion
+   - 4.2 Query Pipeline
+   - 4.3 Frontend
+   - 4.4 System Administration
+   - **4.5 Experiment Harness** _(added in v1.1)_
 5. [Non-Functional Requirements](#5-non-functional-requirements)
 6. [Technology Selections](#6-technology-selections)
 7. [Data Model](#7-data-model)
 8. [API Specification](#8-api-specification)
 9. [Evaluation & Quality Assurance](#9-evaluation--quality-assurance)
+   - 9.1 RAG Evaluation Framework
+   - 9.2 Testing Strategy
+   - **9.3 Experiment Evaluation: RAG vs LLM Wiki** _(added in v1.1)_
 10. [Migration Strategy](#10-migration-strategy)
 11. [Appendices](#11-appendices)
 
@@ -350,6 +359,78 @@ services:
 | FR-15.2 | The system SHALL log all queries, retrieval results, reranking scores, and generation calls for debugging and evaluation. |
 | FR-15.3 | Logs SHALL be structured (JSON) and configurable in verbosity level. |
 
+### 4.5 Experiment Harness
+
+This section captures requirements added in Sprint 7 to support the
+RAG vs LLM Wiki experiment: per-document metadata for corpus
+labeling, telemetry needed to test the efficiency hypothesis,
+extended-thinking configuration to match the Wiki side, and CLI
+tooling to drive ingestion / question-running / judging at scale.
+
+#### FR-16: Document Tags
+
+| ID | Requirement |
+|---|---|
+| FR-16.1 | The system SHALL accept arbitrary key/value metadata per document via a `tags_json` multipart field on `POST /api/documents/upload`, validated as a JSON object. |
+| FR-16.2 | Document tags SHALL be persisted in a JSON column on the `documents` table and returned via every document response. |
+| FR-16.3 | Tag values SHALL be free-form (string, number, boolean) so callers can encode experiment-specific schemas (e.g. `{"domain": "ai-ethics-law", "role": "Anchor", "year": 2026, "authors": "Stober & Dornis"}`) without server-side schema changes. |
+
+#### FR-17: Per-Document Ingestion Timing
+
+| ID | Requirement |
+|---|---|
+| FR-17.1 | The system SHALL record `started_at` and `completed_at` timestamps per `IngestionJob` row, set by the pipeline at job start and at terminal status transition. |
+| FR-17.2 | `GET /api/documents` and `GET /api/documents/{id}` SHALL surface the latest job's `ingestion_started_at`, `ingestion_completed_at`, and computed `ingestion_seconds` in their response payloads. |
+| FR-17.3 | The aggregated per-document timings SHALL be exportable in a stable JSON shape suitable for direct comparison against external systems (see §4.5 FR-20). |
+
+#### FR-18: Token-Usage Telemetry
+
+| ID | Requirement |
+|---|---|
+| FR-18.1 | The system SHALL capture `prompt_tokens`, `completion_tokens`, and (for Anthropic extended-thinking models) `thinking_tokens` from every answer-generation call. |
+| FR-18.2 | Token counts SHALL be returned in `QueryResponse.metadata` and emitted as a `{"type": "usage"}` event over the WebSocket streaming endpoint. |
+| FR-18.3 | Token counts SHALL be persisted on the assistant `Message` row alongside `model_used` and `latency_ms` so conversations are usable as an experiment audit log. |
+| FR-18.4 | For streaming generation, the system SHALL request `stream_options={"include_usage": true}` so the final stream chunk carries usage data. |
+
+#### FR-19: Extended-Thinking Configuration
+
+| ID | Requirement |
+|---|---|
+| FR-19.1 | The system SHALL support Anthropic extended thinking by passing a `thinking={"type": "enabled", "budget_tokens": <N>}` parameter to the LLM call when configured. |
+| FR-19.2 | A `reasoning_effort` setting (`off` / `low` / `medium` / `high` / `xhigh`) SHALL map to budget values (`0` / `4096` / `8192` / `16384` / `32000`) via a single helper, configurable via `REASONING_EFFORT` env var with per-request override in `QueryRequest.options.reasoning_effort`. |
+| FR-19.3 | Whenever extended thinking is enabled, the system SHALL force `temperature=1.0` on the LLM call (Anthropic API requirement); otherwise the system SHALL use the configured `generation_temperature` (default 0.2). |
+| FR-19.4 | The system SHALL support a separate model for ingestion-time contextual enrichment (`ENRICHMENT_LLM_MODEL`, default `claude-sonnet-4-5-20250929`) so per-chunk summarization can run on a cheaper model without affecting answer-generation quality. |
+
+#### FR-20: Batch Ingestion CLI
+
+| ID | Requirement |
+|---|---|
+| FR-20.1 | The system SHALL provide a `rag2compare-ingest` console entry point (and `python -m scripts.ingest_corpus` invocation) that drives `POST /api/collections` and `POST /api/documents/upload` from a YAML manifest. |
+| FR-20.2 | The CLI SHALL sort each collection's documents by role using a configurable `ingest_order` (default `Anchor → Chrono → Bridge → Conflict`) and stamp the manifest's per-document tags onto each upload. |
+| FR-20.3 | The CLI SHALL poll each document's status to a terminal state and write `experiments/results/ingest-<timestamp>.json` containing per-document timings, status, and chunk counts plus per-domain totals. |
+| FR-20.4 | The CLI SHALL support `--dry-run` (print plan without uploading), `--only <substr>` (filter to specific files), `--skip-completed` (resume after interruption), and configurable `--poll-interval` / `--poll-timeout`. |
+
+#### FR-21: Experiment Runner CLI
+
+| ID | Requirement |
+|---|---|
+| FR-21.1 | The system SHALL provide a `rag2compare-run` console entry point that submits a YAML question set to `POST /api/query` and writes the answers, sources, and metadata to `experiments/results/run-<timestamp>.json`. |
+| FR-21.2 | Each question SHALL be submitted in a fresh conversation (no carried context) by default, so cross-question memory contamination is avoided. |
+| FR-21.3 | The CLI SHALL accept `--reasoning-effort` to override the server-side default per-run, and `--repeat N` to support consistency testing. |
+| FR-21.4 | The CLI SHALL support `--only-tier`, `--only-id`, `--collections`, and `--dry-run` for selective and offline use. |
+
+#### FR-22: Judge LLM CLI
+
+| ID | Requirement |
+|---|---|
+| FR-22.1 | The system SHALL provide a `rag2compare-judge` console entry point that pairs a RAG `run-*.json` and a Wiki `run-*.json` by question id and scores both with a configurable Judge LLM. |
+| FR-22.2 | The judge SHALL blind each question's answers as System A / System B with a seeded RNG; the assignment SHALL be recorded in the output for un-blinding during analysis. |
+| FR-22.3 | The judge SHALL score both systems independently against a YAML-defined rubric (criterion id, label, description, anchored 1/5/10 definitions). |
+| FR-22.4 | The default judge model SHALL be cross-family with respect to the answer-generation model (default `gpt-5` when answer model is Claude) to avoid documented same-family self-preference bias in LLM-as-a-judge scoring. |
+| FR-22.5 | The judge SHALL emit `experiments/results/judged-<timestamp>.json` containing per-question scores, judge notes, raw response, blinding mapping, and aggregated means per system per criterion per tier. |
+| FR-22.6 | The judge SHALL support `--secondary-judge MODEL --secondary-judge-questions <ids>` for inter-rater reliability spot-checks, with per-criterion max-delta agreement reported in the output. |
+| FR-22.7 | The judge SHALL support `--resume <prior-judged-file>` to skip questions already scored by the same judge model. |
+
 ---
 
 ## 5. Non-Functional Requirements
@@ -465,8 +546,10 @@ services:
 | Component | Selection | Rationale |
 |---|---|---|
 | **Router** | LiteLLM | Unified interface for 100+ LLM providers, drop-in OpenAI-compatible proxy |
-| **Default provider** | Anthropic Claude (Sonnet 4.5) | Strong instruction following, long context, good at RAG |
-| **Alternatives** | OpenAI GPT-4.1, Ollama (local) | Provider-agnostic via LiteLLM |
+| **Default answer-generation model** | Anthropic Claude Opus 4.7 with `xhigh` extended thinking (32K thinking budget) | Strong reasoning for synthesis-heavy queries; matches the LLM Wiki experiment counterpart for fair comparison |
+| **Default enrichment model** | Anthropic Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`) | Per-chunk contextual summarization is summarization-shaped, not reasoning-heavy — running Opus on ~1000 enrichment calls would inflate ingestion cost ~10× without quality benefit |
+| **Default judge model** (experiment harness) | OpenAI GPT-5 with `medium` reasoning effort | Cross-family choice — avoids documented self-preference bias when scoring Claude outputs |
+| **Alternatives** | OpenAI GPT-4.1 / GPT-5, Ollama (local), any LiteLLM-supported model | Provider-agnostic; per-call model override supported via `create_llm_provider(settings, model_override=...)` |
 
 ### 6.9 Evaluation
 
@@ -559,6 +642,22 @@ services:
 - `document.status`: `pending`, `parsing`, `chunking`, `enriching`, `embedding`, `complete`, `failed`
 - `message.role`: `user`, `assistant`
 - `ingestion_jobs.status`: `queued`, `running`, `complete`, `failed`
+
+**Sprint 7 column additions** (per FR-16, FR-18):
+
+| Table | Column | Type | Purpose |
+|---|---|---|---|
+| `documents` | `tags` | JSON, nullable | Free-form per-document metadata (FR-16) |
+| `messages` | `model_used` | VARCHAR(100), nullable | Which LLM produced the assistant message |
+| `messages` | `latency_ms` | INTEGER, nullable | End-to-end query latency |
+| `messages` | `prompt_tokens` | INTEGER, nullable | Tokens sent to the model |
+| `messages` | `completion_tokens` | INTEGER, nullable | Non-thinking tokens generated |
+| `messages` | `thinking_tokens` | INTEGER, nullable | Anthropic extended-thinking budget consumed |
+
+The system has no Alembic at this time; new nullable columns are
+applied via idempotent `ALTER TABLE ADD COLUMN` statements in
+`init_db()` after `Base.metadata.create_all`. Non-trivial future
+migrations should adopt Alembic.
 
 ### 7.2 Qdrant Vector Schema
 
@@ -653,10 +752,14 @@ Each collection in Qdrant stores points with:
     "multi_query": true,
     "corrective_rag": true,
     "context_expansion": "parent",
-    "max_context_tokens": 8000
+    "max_context_tokens": 8000,
+    "reasoning_effort": "xhigh"
   }
 }
 ```
+
+`options.reasoning_effort` (added in v1.1, FR-19) overrides the
+server-side default. Accepted values: `off | low | medium | high | xhigh`.
 
 **Response:**
 ```json
@@ -678,10 +781,31 @@ Each collection in Qdrant stores points with:
     "corrective_rag_triggered": false,
     "query_variations": ["What was the revenue in Q4?", "Q4 quarterly revenue figures"],
     "latency_ms": 2340,
-    "model_used": "claude-sonnet-4-5-20250929"
+    "model_used": "claude-opus-4-7",
+    "reasoning_effort": "xhigh",
+    "prompt_tokens": 4031,
+    "completion_tokens": 612,
+    "thinking_tokens": 18044
   }
 }
 ```
+
+The `reasoning_effort` and `*_tokens` fields were added in v1.1 (FR-18,
+FR-19). They are nullable: a non-thinking model run will report
+`reasoning_effort: "off"` and null `thinking_tokens`.
+
+**Document upload** accepts an optional `tags_json` multipart form
+field carrying a JSON object that gets stamped onto every uploaded
+document (FR-16). Example:
+
+```bash
+curl -F files=@paper.pdf \
+     -F 'tags_json={"domain":"ai-ethics-law","role":"Anchor","year":2026}' \
+     "http://localhost:8000/api/documents/upload?collection_id=<uuid>"
+```
+
+`DocumentResponse` includes `tags`, `ingestion_started_at`,
+`ingestion_completed_at`, and `ingestion_seconds` (FR-17).
 
 ---
 
@@ -725,6 +849,53 @@ The system SHALL include an evaluation suite that measures retrieval and generat
 | **Frontend tests** | Component rendering, user interactions | Vitest + React Testing Library |
 | **E2E tests** | Upload → ingest → query → verify answer | Playwright |
 | **RAG evaluation** | Retrieval and generation quality | RAGAS + DeepEval |
+
+### 9.3 Experiment Evaluation: RAG vs LLM Wiki
+
+The Sprint 7 experiment harness implements a controlled comparison
+against an external LLM Wiki system over a shared 24-paper corpus.
+The experimental construct, hypotheses, and execution procedure are
+documented in [`docs/RUNBOOK.md`](./RUNBOOK.md). This section captures
+the SRS-level requirements that the harness satisfies.
+
+#### Experimental Construct
+
+| Component | Specification |
+|---|---|
+| **Independent variable** | Knowledge architecture (Vector RAG vs LLM Wiki) |
+| **Dependent variables** | Groundedness, Structural Integrity, Conflict Awareness, Inter-Paper Mapping (rubric-scored 1–10); per-document ingestion-time, per-query token cost (FR-17, FR-18) |
+| **Corpus** | 24 papers across 3 domains (8 each: AI Ethics & Law, Climate Science, Precision Medicine), tagged Anchor / Chrono / Bridge / Conflict (FR-16) |
+| **Question set** | 13 questions across 5 tiers (chronological, conflict, multi-hop, emergence, policy) plus 3 RAG-favoring point-source bias-checks |
+| **Answer model (both systems)** | Claude Opus 4.7 with `xhigh` extended thinking (FR-19) |
+| **Judge model** | GPT-5 with `medium` reasoning, with optional second-judge spot-check (FR-22) |
+
+#### Hypotheses
+
+- **H1 (Synthesis advantage):** LLM Wiki ≥ RAG + 2.0 mean on `inter_paper_mapping` and `structural_integrity` for `multi-hop` and `emergence` tiers.
+- **H2 (Fact-retrieval baseline):** Vector RAG ≥ LLM Wiki on `groundedness` for the `bias-check` tier.
+- **H3 (Efficiency tradeoff):** LLM Wiki ingestion-time and ingestion-tokens substantially exceed RAG's; RAG per-query token cost (especially `thinking_tokens` at `xhigh`) substantially exceeds the LLM Wiki's.
+
+#### Required Artifacts
+
+| Artifact | Producer | Tested by FR-* |
+|---|---|---|
+| `experiments/corpus.yaml` | Hand-authored, ingest CLI consumes | FR-20 |
+| `experiments/questions.yaml` | Hand-authored, runner CLI consumes | FR-21 |
+| `experiments/rubric.yaml` | Hand-authored, judge CLI consumes | FR-22 |
+| `experiments/results/ingest-<ts>.json` | `rag2compare-ingest` | FR-17, FR-20 |
+| `experiments/results/run-<ts>.json` | `rag2compare-run` | FR-18, FR-21 |
+| `experiments/results/judged-<ts>.json` | `rag2compare-judge` | FR-22 |
+
+#### Bias Controls
+
+| Control | Mechanism |
+|---|---|
+| Same answer model both sides | Both systems use Claude Opus 4.7 + xhigh; isolates architecture as the IV |
+| Memory contamination | Runner submits each question in a fresh conversation by default (FR-21.2) |
+| Position / ordering bias | Judge blinds A/B per question with a seeded RNG (FR-22.2) |
+| Same-family judge bias | Default judge is cross-family (`gpt-5`) when answer model is Claude (FR-22.4) |
+| Judge calibration drift | Inter-rater reliability spot-check via `--secondary-judge` flag (FR-22.6) |
+| Strict context limits | `max_context_tokens` is a hard ceiling — system cannot silently expand into long-context "stuffing" mode (FR-11.3) |
 
 ---
 

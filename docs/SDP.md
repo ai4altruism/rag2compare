@@ -4,10 +4,11 @@
 
 | Field | Value |
 |---|---|
-| **Document Version** | 1.0 |
-| **Date** | 2026-03-20 |
-| **Status** | Draft |
-| **Companion Document** | [SRS.md](./SRS.md) |
+| **Document Version** | 1.1 |
+| **Date** | 2026-05-04 |
+| **Status** | As-built through Sprint 7 |
+| **Companion Documents** | [SRS.md](./SRS.md) · [RUNBOOK.md](./RUNBOOK.md) |
+| **Revision history** | 1.0 (2026-03-20) Draft · 1.1 (2026-05-04) Sprint 7 expanded to capture the four-PR experiment-readiness scope (backend foundations, batch ingestion + runner CLIs, frontend pull-forward, judge tooling); §1.3 phase mapping updated; §6 risk register expanded with R9–R11. |
 
 ---
 
@@ -42,13 +43,19 @@ Transform the existing Streamlit-based RAG prototype into a production-grade sys
 
 ### 1.3 Phase-to-Sprint Mapping
 
-| Phase | Name | Sprints | Focus |
-|---|---|---|---|
-| 1 | Foundation | Sprints 1-2 | Project scaffolding, provider abstractions, Qdrant, basic API |
-| 2 | Ingestion Pipeline | Sprints 3-4 | PDF parsing, chunking, enrichment, embedding, background jobs |
-| 3 | Query Pipeline | Sprints 5-6 | Hybrid retrieval, reranking, corrective RAG, streaming |
-| 4 | Frontend | Sprints 6-7 | Next.js app, chat UI, document management, settings |
-| 5 | Evaluation & Polish | Sprint 8 | RAGAS/DeepEval, Docker Compose, observability, docs |
+| Phase | Name | Sprints | Status | Focus |
+|---|---|---|---|---|
+| 1 | Foundation | Sprints 1-2 | ✅ Complete | Project scaffolding, provider abstractions, Qdrant, basic API |
+| 2 | Ingestion Pipeline | Sprints 3-4 | ✅ Complete | PDF parsing, chunking, enrichment, embedding, background jobs |
+| 3 | Query Pipeline | Sprints 5-6 | ✅ Complete | Hybrid retrieval, reranking, corrective RAG, streaming |
+| 4 | Frontend | Sprints 6-7 | ✅ Complete | Next.js app, chat UI, document management, settings |
+| 4.5 | **Experiment Harness** | **Sprint 7** | ✅ **Complete** | **Opus 4.7 + extended thinking, document tags, token telemetry, batch ingest CLI, experiment runner CLI, judge LLM CLI** |
+| 5 | Evaluation & Polish | Sprint 8 | Planned | RAGAS/DeepEval, Docker Compose hardening, observability, perf benchmarks |
+
+Phase 4.5 was added in v1.1 of this document. It was not in the
+original v1.0 plan; it expanded out of Sprint 7 to support the
+RAG vs LLM Wiki experiment. See §4 Sprint 7 below for the as-built
+breakdown and SRS §4.5 for the corresponding requirements.
 
 ---
 
@@ -239,30 +246,103 @@ Scopes: api, ingestion, query, providers, frontend, storage, config, eval
 
 ---
 
-### Sprint 7: Frontend — Chat, Documents & Collections
+### Sprint 7: Experiment Harness + Frontend (As-built)
 
-**Phase**: 4 — Frontend
-**Goal**: Fully functional frontend for document management, chat with streaming, and collection management.
+**Phase**: 4 (Frontend) + 4.5 (Experiment Harness)
+**Status**: ✅ Complete (2026-05-04)
+**Goal**: Make the system experiment-ready for the RAG vs LLM Wiki
+comparison: backend supports Opus 4.7 with extended thinking, document
+tags, and token telemetry; CLIs drive batch ingestion and a fixed
+question set; frontend exposes the full chat / documents /
+collections / settings surface; a judge CLI scores both runs against a
+shared rubric.
 
-| ID | Task | SRS Refs | Acceptance Criteria |
+Shipped in four sequential pull requests. Each PR was independently
+reviewable, tested, and merged in order.
+
+#### PR-A: Backend foundations — `feat/S7-experiment-backend`
+
+| ID | Task | SRS Refs | Acceptance |
 |---|---|---|---|
-| S7-01 | **Chat interface** | FR-13.1, FR-13.2, FR-13.7 | Chat page as default route (`/`). Message input with send button. Messages displayed in scrollable thread (user right, assistant left). Streaming responses rendered token-by-token via WebSocket. Follow-up questions use conversation context. Zustand store for messages and active conversation. Component tests. |
-| S7-02 | **Source citations in chat** | FR-13.3, FR-13.4 | Each assistant message displays source badges (document name + page). Clicking a badge opens a panel/modal showing: full chunk text, header chain, page number, relevance score. Component tests. |
-| S7-03 | **Conversation management** | FR-13.5, FR-13.6 | Sidebar lists conversations. New conversation button. Delete conversation. Each conversation shows which collection(s) it searches. Collection selector dropdown in chat header. Component tests. |
-| S7-04 | **Document upload page** | FR-12.1, FR-12.2, FR-12.6 | `/documents` page. Drag-and-drop zone + file picker for PDFs. Bulk upload support. Upload progress bar per file. After upload, shows ingestion status (parsing → chunking → enriching → embedding → complete/failed) with polling via TanStack Query. Component tests. |
-| S7-05 | **Document library** | FR-12.3, FR-12.5 | `/documents` page (below upload). Table of all documents: title, filename, page count, chunk count, collection, status, upload date. Re-ingest button per document. Delete button per document. Filterable by collection and status. Component tests. |
-| S7-06 | **Collection management page** | FR-12.4 | `/collections` page. Create collection (name + description). List collections with document counts. Rename and delete collections. Assign/move documents between collections. Component tests. |
-| S7-07 | **Settings page** | FR-14.1, FR-14.2, FR-14.3 | `/settings` page. Provider configuration: LLM (provider dropdown, model, API key), Embedding (provider, model, dimensions), Reranker (provider, model, API key). Retrieval parameters: top_k, rerank top_k, context expansion mode, multi-query toggle, corrective RAG toggle. Ingestion parameters: parser, chunk size, overlap, enrichment toggle. Save persists to backend. Component tests. |
-| S7-08 | **Frontend tests** | NFR-5.1 | Vitest + React Testing Library tests for all major components. Test chat message rendering, streaming simulation, upload flow, collection CRUD. >= 70% component coverage. |
+| S7-A1 | **Default model + extended thinking** | FR-19 | `LLM_MODEL` default → `claude-opus-4-7`. New `REASONING_EFFORT` setting maps `off/low/medium/high/xhigh` → `0/4096/8192/16384/32000` budget tokens via `providers/llm/thinking.py`. `AnswerGenerator` forces `temperature=1.0` whenever thinking is enabled (Anthropic requirement); previous hardcoded `temperature=0.2` removed. Streaming asks LiteLLM for `include_usage` so the final chunk carries token counts. |
+| S7-A2 | **Separate enrichment model** | FR-19.4 | New `ENRICHMENT_LLM_MODEL` setting (default `claude-sonnet-4-5-20250929`). New `create_enrichment_llm_provider(settings)` factory used by the ingestion pipeline so per-chunk summarization runs on a cheaper model than answer generation. |
+| S7-A3 | **Document tags column** | FR-16 | `Document.tags` JSON column added via idempotent `init_db()` `ALTER TABLE` upgrade (no Alembic in project today). Upload route accepts optional `tags_json` multipart form field, validated as JSON object. `DocumentResponse` exposes `tags`. |
+| S7-A4 | **Token telemetry + ingestion timing** | FR-17, FR-18 | `Message` model gains `model_used`, `latency_ms`, `prompt_tokens`, `completion_tokens`, `thinking_tokens` columns. `LiteLLMProvider.last_usage` captures Anthropic `reasoning_tokens` as `thinking_tokens`. `/query` and WebSocket emit usage in metadata. `DocumentResponse` joins the latest `IngestionJob` to expose `ingestion_started_at`, `ingestion_completed_at`, `ingestion_seconds`. |
+| S7-A5 | **Tests** | NFR-5.1 | 22 new unit tests covering thinking helper mapping, generator thinking/temperature behavior, LiteLLM usage extraction (including Anthropic `reasoning_tokens`), document tags round-trip, ingestion-timing projection, and idempotent in-place schema upgrade. Full unit suite: 109 → 109 pass. |
 
-**Sprint 7 Deliverable**: Fully functional frontend. Users can upload PDFs, manage collections, chat with streaming responses and source citations, and configure all providers and parameters.
+**PR-A deliverable:** Backend can be configured for the experiment.
+The schema migrations are non-destructive on existing dev DBs.
+
+#### PR-B: Batch ingestion + experiment runner CLIs — `feat/S7-experiment-runner`
+
+| ID | Task | SRS Refs | Acceptance |
+|---|---|---|---|
+| S7-B1 | **Corpus manifest** | FR-20 | `experiments/corpus.yaml` populated with the 24-paper schema (3 collections × 8 documents) and per-document `tags` (domain, role, year, authors, title). Role values include compound roles (`Chrono/Anchor`) that the role-sort handles correctly. |
+| S7-B2 | **Question set** | FR-21 | `experiments/questions.yaml` with 13 questions: 10 across five Wiki-leaning tiers (chronological, conflict, multi-hop, emergence, policy) plus 3 RAG-favoring point-source bias-checks. Each question has `id`, `tier`, `bias`, `collections`, `text`. |
+| S7-B3 | **Ingest CLI** | FR-20 | `backend/scripts/ingest_corpus.py` reads `corpus.yaml`, ensures collections via `POST /collections`, sorts by `ingest_order`, uploads with `tags_json`, polls each document to terminal status, writes `experiments/results/ingest-<ts>.json` with per-document timings and per-domain totals. Flags: `--dry-run`, `--only`, `--skip-completed`, `--poll-interval`, `--poll-timeout`. |
+| S7-B4 | **Experiment runner CLI** | FR-21 | `backend/scripts/run_experiment.py` reads `questions.yaml`, submits each question in a fresh conversation via `POST /query` with configurable `reasoning_effort`, writes `experiments/results/run-<ts>.json` with answers + sources + metadata. Flags: `--reasoning-effort`, `--repeat`, `--collections`, `--only-tier`, `--only-id`, `--dry-run`. |
+| S7-B5 | **Console entry points** | FR-20, FR-21 | `pyproject.toml [project.scripts]` registers `rag2compare-ingest` and `rag2compare-run`. Wheel includes the `scripts/` package. |
+| S7-B6 | **Tests** | NFR-5.1 | 28 new unit tests covering manifest parsing, role sort key (including compound roles), upload payload formation, question filtering, query payload shape, dry-run behavior. Full unit suite: 109 → 137 pass. |
+
+**PR-B deliverable:** End-to-end experiment ingestion + querying runs
+from CLI, no UI required.
+
+#### PR-C: Frontend pull-forward — `feat/S7-frontend-ui`
+
+| ID | Task | SRS Refs | Acceptance |
+|---|---|---|---|
+| S7-C1 | **UI primitive components** | 6.2 | `components/ui/{button,card,input,label,textarea,select,badge,skeleton,separator,modal}.tsx` hand-written so the project doesn't require running the `shadcn` CLI (no network at install time). Modal uses the native `<dialog>` element to avoid pulling in `@radix-ui/react-dialog`. |
+| S7-C2 | **Chat page** | FR-13.1–13.7, FR-19 | `app/page.tsx`: collection multi-select chips, reasoning-effort dropdown (defaults to server's `reasoning_effort`), WebSocket streaming, per-turn metadata badges (`latency_ms`, `prompt/completion/thinking tokens`, `retrieval_count → reranked_count`), expandable source cards with verbatim chunk text + page numbers + relevance scores. Cmd/Ctrl+Enter to submit. |
+| S7-C3 | **Documents page** | FR-12, FR-16, FR-17 | `app/documents/page.tsx`: collection picker, multi-file upload form with role/domain/year/authors fields serialized to `tags_json`, status-aware table showing role tag, ingestion seconds, chunk count, file size; reingest + delete actions. Auto-polls every 2s while any document is mid-pipeline (status not terminal). |
+| S7-C4 | **Collections page** | FR-12.4 | `app/collections/page.tsx`: list cards with document counts and timestamps, create / edit / delete via confirmation modals. |
+| S7-C5 | **Settings page** | FR-14, FR-19 | `app/settings/page.tsx`: read-only display of `GET /api/settings` (LLM model, reasoning effort, embedding/reranker, top-k, hybrid search), with health-cell status from `/api/health` (auto-refresh every 15s). |
+| S7-C6 | **Data hooks** | NFR-4.2 | `hooks/use-{collections,documents,settings,stream-query}.ts` — TanStack Query for fetches and mutations, custom hook abstracting the `QueryWebSocket` lifecycle for chat. WebSocket URL derives from `window.location` so the same build works in local dev and behind a proxy. |
+| S7-C7 | **Type + API client updates** | NFR-4.2 | `lib/types.ts` mirrors PR-A backend additions (`tags`, `ingestion_seconds`, `reasoning_effort`, token-count fields, `"usage"` WS event). `lib/api.ts` gains `uploadDocuments(files, tags)`. `lib/websocket.ts` handles the new `usage` event. |
+| S7-C8 | **Build verification** | NFR-5.1 | `pnpm build` produces 5 static routes with no type errors. `pnpm lint` clean. |
+
+**PR-C deliverable:** All four nav pages functional — placeholders
+removed.
+
+#### PR-D: Judge LLM tooling — `feat/S7-judge-tooling`
+
+| ID | Task | SRS Refs | Acceptance |
+|---|---|---|---|
+| S7-D1 | **Rubric** | FR-22.3 | `experiments/rubric.yaml` with four criteria (Groundedness, Structural Integrity, Conflict Awareness, Inter-Paper Mapping), each with anchored 1/5/10 definitions. |
+| S7-D2 | **Judge CLI** | FR-22 | `backend/scripts/judge_runs.py` pairs runs by question id, blinds answers as System A/B with seeded RNG (mapping recorded for un-blinding), submits to LiteLLM with `response_format=json_object`, parses defensively (extracts first balanced `{...}`, coerces ints to 1-10 range, flags missing scores), aggregates per-system × per-criterion × per-tier means. Default judge: `gpt-5` (cross-family). |
+| S7-D3 | **Inter-rater reliability** | FR-22.6 | `--secondary-judge MODEL --secondary-judge-questions <ids>` re-judges a subset with a different model. Output's `secondary.agreement.max_deltas` field reports per-criterion worst delta between the two judges. |
+| S7-D4 | **Resume support** | FR-22.7 | `--resume <prior-judged-file>` skips question_ids already scored by the same judge model. Long judge runs (~5–10 min) are expensive enough to warrant idempotent resumption. |
+| S7-D5 | **Console entry point + docs** | FR-22 | `pyproject.toml` registers `rag2compare-judge`. `experiments/README.md` gains a Step 3 section documenting workflow, Wiki run schema requirement, inter-rater reliability spot-check, output schema, and how each hypothesis maps to a `judged-*.json` check. |
+| S7-D6 | **Tests** | NFR-5.1 | 36 new unit tests covering rubric parsing, blinding determinism + balance, prompt assembly (system order, anchors, sources, empty handling), JSON-from-prose extraction, score coercion edge cases, aggregation + tier breakdowns, inter-rater delta math, dry-run behavior. Full unit suite: 137 → 173 pass. |
+
+**PR-D deliverable:** Closed loop on the experiment — given both
+runs, a judge produces a scored comparison artifact.
+
+#### Sprint 7 Deliverable Summary
+
+- Backend ready for Opus 4.7 + xhigh thinking with full token telemetry
+- 24-paper corpus manifest + 13-question evaluation set + 4-criterion judge rubric
+- Three CLIs: `rag2compare-ingest`, `rag2compare-run`, `rag2compare-judge`
+- Functional UI for chat, documents, collections, settings
+- 173 backend unit tests pass
+- Frontend `pnpm build` and `pnpm lint` clean
+- Workflow documented in `experiments/README.md` + `docs/RUNBOOK.md`
+
+#### Items deferred to Sprint 8
+
+- **Frontend tests** (S7-08 in v1.0 plan): Vitest + RTL was deferred — the four pages are exercised manually plus by the Next.js static type/lint pipeline. Belongs to Sprint 8 alongside RAGAS evaluation.
+- **Persisted UI settings** (`PUT /api/settings`): backend stub returns current settings; full mutation handling deferred.
+- **Vision-based parser** (FR-1.5): Sprint 8 task; Docling + PyMuPDF4LLM cover the experiment corpus.
 
 ---
 
 ### Sprint 8: Evaluation, Polish & Deployment
 
 **Phase**: 5 — Evaluation & Polish
-**Goal**: RAG evaluation suite, E2E tests, vision parsing, Docker Compose production config, documentation.
+**Status**: Planned
+**Goal**: RAG evaluation suite (RAGAS/DeepEval), frontend test setup,
+E2E tests, vision parsing, Docker Compose production hardening,
+performance benchmarking. Picks up the items deferred from Sprint 7
+(see Sprint 7 §"Items deferred to Sprint 8").
 
 | ID | Task | SRS Refs | Acceptance Criteria |
 |---|---|---|---|
@@ -370,6 +450,9 @@ This chain spans Sprints 1-7 and represents the core data flow from configuratio
 | R6 | **Frontend/backend schema drift** | Medium | Low | Generate TypeScript types from backend Pydantic schemas (or maintain shared type definitions). API tests validate response shapes. |
 | R7 | **RAG evaluation metrics don't meet thresholds** | Medium | High | Thresholds are tunable. Evaluation identifies which pipeline stage is the bottleneck (retrieval vs generation). Iterate on prompts, chunking strategy, or reranking before adjusting thresholds. |
 | R8 | **Docker Compose resource constraints on local machines** | Medium | Medium | Document minimum hardware requirements. Qdrant and Ollama are memory-hungry — provide guidance for non-GPU machines. Ollama is optional. |
+| R9 | **Same-family judge bias inflates Wiki scores** | Medium | High | Default judge is cross-family (`gpt-5` when answer model is Claude). Inter-rater reliability spot-check via `--secondary-judge gemini-2.5-pro` flags calibration drift. Decision rule: if any criterion's max-delta > 2, fall back to mean-of-judges or add a third judge. Documented in [`docs/RUNBOOK.md`](./RUNBOOK.md) §3.2. |
+| R10 | **Asymmetric ingestion-cost confounds H3** | Medium | Medium | RAG side uses Sonnet 4.5 for per-chunk enrichment; Wiki side uses Opus 4.7 for full ingestion. This *is* the experiment's hypothesis (Wiki pays compilation tax upfront), but readers must understand it isn't apples-to-apples on raw cost. Writeup must explicitly call out the model choice on each side. To eliminate the asymmetry, set `ENRICHMENT_LLM_MODEL=claude-opus-4-7` and re-run. |
+| R11 | **Anthropic extended-thinking budget cap shifts** | Low | Low | The `xhigh` budget (32K tokens) is hardcoded in `providers/llm/thinking.py`. If Anthropic raises or lowers the API cap, the value can be changed in one place. Older runs remain reproducible because `metadata.reasoning_effort` and `metadata.thinking_tokens` are persisted per query. |
 
 ---
 
