@@ -5,11 +5,18 @@
  * and typed message parsing.
  */
 
-import type { QueryMetadata, QueryOptions, SourceResponse, WSMessage } from "./types";
+import type {
+  QueryMetadata,
+  QueryOptions,
+  QueryUsage,
+  SourceResponse,
+  WSMessage,
+} from "./types";
 
 export type WSEventHandler = {
   onToken?: (content: string) => void;
   onSources?: (sources: SourceResponse[]) => void;
+  onUsage?: (usage: QueryUsage) => void;
   onMetadata?: (metadata: QueryMetadata) => void;
   onDone?: () => void;
   onError?: (error: string) => void;
@@ -100,6 +107,9 @@ export class QueryWebSocket {
         break;
       case "sources":
         this.handlers.onSources?.(msg.content as SourceResponse[]);
+        break;
+      case "usage":
+        this.handlers.onUsage?.(msg.content as QueryUsage);
         break;
       case "metadata":
         this.handlers.onMetadata?.(msg.content as QueryMetadata);
