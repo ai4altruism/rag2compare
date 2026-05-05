@@ -1,41 +1,70 @@
-"""Anthropic extended-thinking ("reasoning effort") helper.
+"""Anthropic adaptive-thinking ("reasoning effort") helper.
 
-Maps a human-readable effort level to a budget_tokens value for Anthropic's
-`thinking` parameter. Used for Claude Opus 4.7 and other models that support
-extended reasoning. When budget > 0 the LLM call must also use temperature=1.0.
+For Claude Opus 4.7, manual extended thinking
+(`thinking={"type": "enabled", "budget_tokens": N}`) is no longer
+accepted — the API returns 400. The supported shape is adaptive
+thinking, configured by:
+
+    thinking      = {"type": "adaptive", "display": "summarized"}
+    output_config = {"effort": "<tier>"}
+
+where `<tier>` is `low | medium | high | xhigh | max`. `xhigh` is
+specifically Opus 4.7's high-end tier, matching Claude Code's
+`xhigh` preset; `max` is the absolute ceiling. The effort acts as
+soft guidance — Claude decides per-request how much to think.
+
+Notes:
+- `display` defaults to `"omitted"` on Opus 4.7 (silent change from
+  Opus 4.6's `"summarized"` default). We opt back into summarized
+  output so callers and human reviewers can inspect reasoning
+  traces. Billing is the same either way.
+- "off" disables thinking by omitting the `thinking` block entirely.
+  On Opus 4.7 this is the default; on older models a `disabled`
+  thinking type is required, but we don't target those models for
+  the answer-generation path.
+- Manual thinking with `budget_tokens` is still functional on Sonnet
+  4.5 / Sonnet 4.6 / Opus 4.6 (deprecated), but our enrichment path
+  doesn't enable thinking at all so we don't carry that code.
+
+See https://platform.claude.com/docs/en/docs/build-with-claude/adaptive-thinking
 """
 
 from __future__ import annotations
 
-REASONING_EFFORTS = ("off", "low", "medium", "high", "xhigh")
-
-_BUDGETS: dict[str, int] = {
-    "off": 0,
-    "low": 4_096,
-    "medium": 8_192,
-    "high": 16_384,
-    "xhigh": 32_000,
-}
+REASONING_EFFORTS: tuple[str, ...] = ("off", "low", "medium", "high", "xhigh", "max")
 
 
-def budget_for(effort: str | None) -> int:
-    """Return the budget_tokens value for a given effort level.
-
-    Unknown values fall back to "off" (no thinking). Returns 0 when thinking
-    should be disabled.
-    """
+def is_thinking_enabled(effort: str | None) -> bool:
+    """True if `effort` should turn adaptive thinking on."""
     if not effort:
-        return 0
-    return _BUDGETS.get(effort.lower(), 0)
+        return False
+    return effort.lower() != "off"
 
 
 def thinking_param(effort: str | None) -> dict | None:
-    """Build the Anthropic `thinking` parameter for a given effort level.
+    """Build the Anthropic `thinking` block for adaptive thinking.
 
-    Returns None when thinking should be disabled, so callers can spread the
-    result conditionally without sending an empty/disabled value.
+    Returns None when thinking should be disabled, so callers can spread
+    the result conditionally without sending an empty/disabled value.
     """
-    budget = budget_for(effort)
-    if budget <= 0:
+    if not is_thinking_enabled(effort):
         return None
-    return {"type": "enabled", "budget_tokens": budget}
+    return {"type": "adaptive", "display": "summarized"}
+
+
+def effort_param(effort: str | None) -> dict | None:
+    """Build the Anthropic `output_config` block for adaptive thinking.
+
+    The effort tier is soft guidance for how much thinking Claude
+    allocates per-request. Returns None when thinking is off.
+
+    Unknown tiers fall back to `high` (Anthropic's default) rather than
+    silently disabling thinking — if a config typo happens at runtime,
+    we'd rather over-think than under-think a research query.
+    """
+    if not is_thinking_enabled(effort):
+        return None
+    tier = (effort or "").lower()
+    if tier not in {"low", "medium", "high", "xhigh", "max"}:
+        tier = "high"
+    return {"effort": tier}
