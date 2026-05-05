@@ -5,8 +5,15 @@ from dataclasses import dataclass, field
 
 from src.logging import get_logger
 from src.providers.base import LLMProvider
-from src.providers.llm.thinking import thinking_param
+from src.providers.llm.thinking import effort_param, is_thinking_enabled, thinking_param
 from src.storage.qdrant import SearchResult
+
+# When adaptive thinking is on, max_tokens is a hard cap on total output
+# (thinking + answer). At `xhigh` and `max` the model can think long; if
+# we hit `stop_reason: "max_tokens"` the answer gets truncated before the
+# real response begins. 16K is Anthropic's recommended generous default;
+# bump higher if real-world runs hit the cap.
+THINKING_MAX_TOKENS = 16_000
 
 logger = get_logger(__name__)
 
@@ -65,17 +72,30 @@ class AnswerGenerator:
         self._temperature = temperature
 
     def _llm_kwargs(self, *, stream: bool = False) -> dict:
-        """Build per-call kwargs for the LLM, honoring extended-thinking rules.
+        """Build per-call kwargs for the LLM, honoring adaptive-thinking rules.
 
-        Anthropic extended thinking requires temperature=1.0 — passing 0.2
-        with thinking enabled would be silently rejected or downgraded by the
-        provider, so we override here.
+        Adaptive thinking on Opus 4.7 requires:
+        - `thinking={"type": "adaptive", "display": "summarized"}` block
+          (manual `{"type": "enabled", "budget_tokens": N}` is rejected
+          with 400 on Opus 4.7).
+        - Soft guidance via `output_config={"effort": <tier>}` at the top
+          level of the request, separate from the `thinking` block.
+        - `max_tokens` set generously — adaptive thinking can run long
+          and `max_tokens` is the hard cap on total output. We use 16K
+          which matches Anthropic's example for xhigh.
+        - Temperature=1.0 — historically required for manual thinking.
+          The adaptive-thinking docs don't disclaim it; passing 1.0 is
+          harmless (it's also Anthropic's default) and forces the
+          provider to honor the implicit constraint.
         """
-        thinking = thinking_param(self._reasoning_effort)
         kwargs: dict = {}
-        if thinking is not None:
-            kwargs["thinking"] = thinking
+        if is_thinking_enabled(self._reasoning_effort):
+            kwargs["thinking"] = thinking_param(self._reasoning_effort)
+            effort = effort_param(self._reasoning_effort)
+            if effort is not None:
+                kwargs["output_config"] = effort
             kwargs["temperature"] = 1.0
+            kwargs["max_tokens"] = THINKING_MAX_TOKENS
         else:
             kwargs["temperature"] = self._temperature
         if stream:

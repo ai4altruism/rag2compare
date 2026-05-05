@@ -4,11 +4,11 @@
 
 | Field | Value |
 |---|---|
-| **Document Version** | 1.1 |
+| **Document Version** | 1.2 |
 | **Date** | 2026-05-04 |
 | **Status** | As-built (Sprint 7 complete) |
 | **Project** | rag2compare |
-| **Revision history** | 1.0 (2026-03-20) Draft · 1.1 (2026-05-04) Adds §4.5 Experiment Harness, §9.3 Experiment Evaluation; updates §6 to Opus 4.7 default; updates §7.1 schema and §8.2 response shape for as-built fields. |
+| **Revision history** | 1.0 (2026-03-20) Draft · 1.1 (2026-05-04) Adds §4.5 Experiment Harness, §9.3 Experiment Evaluation; updates §6 to Opus 4.7 default; updates §7.1 schema and §8.2 response shape for as-built fields. · 1.2 (2026-05-04) Rewrites FR-19 from manual `{type: enabled, budget_tokens}` to adaptive thinking — Opus 4.7 rejects manual mode with 400; adds `max` tier and `output_config={effort}` parameter; documents `display` default flip to `omitted` on Opus 4.7. |
 
 ---
 
@@ -392,14 +392,23 @@ tooling to drive ingestion / question-running / judging at scale.
 | FR-18.3 | Token counts SHALL be persisted on the assistant `Message` row alongside `model_used` and `latency_ms` so conversations are usable as an experiment audit log. |
 | FR-18.4 | For streaming generation, the system SHALL request `stream_options={"include_usage": true}` so the final stream chunk carries usage data. |
 
-#### FR-19: Extended-Thinking Configuration
+#### FR-19: Extended-Thinking Configuration (Adaptive Thinking)
+
+Anthropic's manual extended-thinking mode (`thinking: {type: "enabled",
+budget_tokens: N}`) is **rejected with HTTP 400 on Claude Opus 4.7**.
+The supported configuration is adaptive thinking with a separate
+effort tier passed via `output_config`.
 
 | ID | Requirement |
 |---|---|
-| FR-19.1 | The system SHALL support Anthropic extended thinking by passing a `thinking={"type": "enabled", "budget_tokens": <N>}` parameter to the LLM call when configured. |
-| FR-19.2 | A `reasoning_effort` setting (`off` / `low` / `medium` / `high` / `xhigh`) SHALL map to budget values (`0` / `4096` / `8192` / `16384` / `32000`) via a single helper, configurable via `REASONING_EFFORT` env var with per-request override in `QueryRequest.options.reasoning_effort`. |
-| FR-19.3 | Whenever extended thinking is enabled, the system SHALL force `temperature=1.0` on the LLM call (Anthropic API requirement); otherwise the system SHALL use the configured `generation_temperature` (default 0.2). |
-| FR-19.4 | The system SHALL support a separate model for ingestion-time contextual enrichment (`ENRICHMENT_LLM_MODEL`, default `claude-sonnet-4-5-20250929`) so per-chunk summarization can run on a cheaper model without affecting answer-generation quality. |
+| FR-19.1 | The system SHALL pass `thinking={"type": "adaptive", "display": "summarized"}` to the LLM call when thinking is enabled. The `display: "summarized"` setting is required because Opus 4.7 silently flipped the default to `"omitted"`; without it the response carries an empty `thinking` field, hiding reasoning traces from human reviewers. |
+| FR-19.2 | The system SHALL pass `output_config={"effort": <tier>}` at the top level of the request alongside the adaptive `thinking` block, where `<tier> ∈ {low, medium, high, xhigh, max}`. Effort acts as soft guidance for how much thinking Claude allocates per request. |
+| FR-19.3 | A `reasoning_effort` setting (`off` / `low` / `medium` / `high` / `xhigh` / `max`) SHALL be configurable via `REASONING_EFFORT` env var with per-request override in `QueryRequest.options.reasoning_effort`. The value `off` SHALL omit the `thinking` block entirely (Opus 4.7's default-off behavior). The value `xhigh` is Opus-4.7-specific; `max` is Anthropic's absolute ceiling. |
+| FR-19.4 | Whenever thinking is enabled, the system SHALL force `temperature=1.0` (historical Anthropic constraint, harmless on adaptive thinking which would default to 1.0 anyway) and SHALL set `max_tokens` to a generous ceiling (default 16,000) — `max_tokens` is a hard cap on total output (thinking + answer) and at xhigh/max the model can exhaust a small cap before producing answer text. Otherwise the system SHALL use the configured `generation_temperature` (default 0.2). |
+| FR-19.5 | The system SHALL NEVER emit `thinking={"type": "enabled", "budget_tokens": N}` on the answer-generation path. Regression tests (`test_thinking.py::test_no_budget_tokens_anywhere`, `test_generator.py::test_generate_never_emits_budget_tokens`) cover this. |
+| FR-19.6 | The system SHALL support a separate model for ingestion-time contextual enrichment (`ENRICHMENT_LLM_MODEL`, default `claude-sonnet-4-5-20250929`) so per-chunk summarization can run on a cheaper model without affecting answer-generation quality. The enrichment path SHALL NOT enable thinking — Sonnet 4.5 still accepts manual `budget_tokens` (deprecated but functional), but our enrichment is summarization-shaped, not reasoning-heavy, so we run it without thinking. |
+
+**Reference:** [Anthropic adaptive-thinking docs](https://platform.claude.com/docs/en/docs/build-with-claude/adaptive-thinking).
 
 #### FR-20: Batch Ingestion CLI
 

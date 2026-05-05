@@ -112,14 +112,41 @@ class TestAnswerGenerator:
         kwargs = mock_llm.generate.call_args[1]
         assert kwargs["temperature"] == 0.2
         assert "thinking" not in kwargs
+        assert "output_config" not in kwargs
 
-    async def test_generate_with_xhigh_thinking_passes_thinking_and_temp_1(self, mock_llm):
+    async def test_generate_with_xhigh_passes_adaptive_thinking_plus_effort(self, mock_llm):
         gen = AnswerGenerator(mock_llm, reasoning_effort="xhigh")
         await gen.generate("q", [_make_chunk("c1", 0.9)])
 
         kwargs = mock_llm.generate.call_args[1]
-        assert kwargs["temperature"] == 1.0  # Anthropic extended-thinking requirement
-        assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 32_000}
+        # Adaptive thinking — manual budget_tokens 400s on Opus 4.7.
+        assert kwargs["thinking"] == {"type": "adaptive", "display": "summarized"}
+        # Effort tier is its own top-level field, separate from thinking.
+        assert kwargs["output_config"] == {"effort": "xhigh"}
+        # Temperature stays at 1.0 — historical thinking constraint, harmless default.
+        assert kwargs["temperature"] == 1.0
+        # max_tokens generous so xhigh thinking doesn't get truncated.
+        assert kwargs["max_tokens"] >= 16_000
+
+    async def test_generate_with_max_passes_max_effort(self, mock_llm):
+        gen = AnswerGenerator(mock_llm, reasoning_effort="max")
+        await gen.generate("q", [_make_chunk("c1", 0.9)])
+
+        kwargs = mock_llm.generate.call_args[1]
+        assert kwargs["thinking"] == {"type": "adaptive", "display": "summarized"}
+        assert kwargs["output_config"] == {"effort": "max"}
+
+    async def test_generate_never_emits_budget_tokens(self, mock_llm):
+        # Regression: budget_tokens is rejected with 400 on Opus 4.7. The
+        # generator must not emit it through any code path.
+        for effort in (None, "off", "low", "medium", "high", "xhigh", "max"):
+            gen = AnswerGenerator(mock_llm, reasoning_effort=effort)
+            await gen.generate("q", [_make_chunk("c1", 0.9)])
+            kwargs = mock_llm.generate.call_args[1]
+            thinking = kwargs.get("thinking")
+            if thinking is not None:
+                assert thinking.get("type") != "enabled"
+                assert "budget_tokens" not in thinking
 
     async def test_generate_with_off_thinking_keeps_low_temp(self, mock_llm):
         gen = AnswerGenerator(mock_llm, reasoning_effort="off", temperature=0.2)
@@ -128,8 +155,10 @@ class TestAnswerGenerator:
         kwargs = mock_llm.generate.call_args[1]
         assert kwargs["temperature"] == 0.2
         assert "thinking" not in kwargs
+        assert "output_config" not in kwargs
+        assert "max_tokens" not in kwargs
 
-    async def test_generate_stream_passes_include_usage(self, mock_llm):
+    async def test_generate_stream_passes_include_usage_and_adaptive(self, mock_llm):
         captured: dict = {}
 
         async def mock_stream(messages, **kwargs):
@@ -143,8 +172,10 @@ class TestAnswerGenerator:
             pass
 
         assert captured["stream_options"] == {"include_usage": True}
-        assert captured["thinking"] == {"type": "enabled", "budget_tokens": 32_000}
+        assert captured["thinking"] == {"type": "adaptive", "display": "summarized"}
+        assert captured["output_config"] == {"effort": "xhigh"}
         assert captured["temperature"] == 1.0
+        assert captured["max_tokens"] >= 16_000
 
     async def test_generate_stream(self, mock_llm):
         async def mock_stream(*args, **kwargs):
