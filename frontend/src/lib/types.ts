@@ -1,5 +1,6 @@
 /**
  * TypeScript types mirroring backend Pydantic schemas.
+ * Keep in sync with backend/src/schemas/__init__.py.
  */
 
 // --- Collections ---
@@ -23,6 +24,27 @@ export interface CollectionResponse {
 }
 
 // --- Documents ---
+export type DocumentStatus =
+  | "pending"
+  | "parsing"
+  | "chunking"
+  | "enriching"
+  | "embedding"
+  | "storing"
+  | "completed"
+  | "error"
+  | "failed"
+  | "processing";
+
+export interface DocumentTags {
+  domain?: string;
+  role?: string;
+  year?: number | string;
+  authors?: string;
+  title?: string;
+  [key: string]: string | number | boolean | null | undefined;
+}
+
 export interface DocumentResponse {
   id: string;
   collection_id: string;
@@ -31,11 +53,15 @@ export interface DocumentResponse {
   author: string | null;
   page_count: number | null;
   file_size_bytes: number | null;
-  status: string;
+  status: DocumentStatus | string;
   parser_used: string | null;
   chunk_count: number | null;
   embedding_model: string | null;
   error_message: string | null;
+  tags: DocumentTags | null;
+  ingestion_started_at: string | null;
+  ingestion_completed_at: string | null;
+  ingestion_seconds: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -48,6 +74,8 @@ export interface ReingestRequest {
 }
 
 // --- Query ---
+export type ReasoningEffort = "off" | "low" | "medium" | "high" | "xhigh";
+
 export interface QueryOptions {
   top_k_retrieval?: number;
   top_k_rerank?: number;
@@ -55,6 +83,7 @@ export interface QueryOptions {
   corrective_rag?: boolean;
   context_expansion?: "off" | "parent" | "siblings";
   max_context_tokens?: number;
+  reasoning_effort?: ReasoningEffort | null;
 }
 
 export interface QueryRequest {
@@ -73,6 +102,13 @@ export interface SourceResponse {
   relevance_score: number;
 }
 
+export interface QueryUsage {
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  thinking_tokens?: number | null;
+  total_tokens?: number | null;
+}
+
 export interface QueryMetadata {
   retrieval_count: number;
   reranked_count: number;
@@ -80,6 +116,10 @@ export interface QueryMetadata {
   query_variations: string[];
   latency_ms: number;
   model_used: string;
+  reasoning_effort?: ReasoningEffort | string | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  thinking_tokens?: number | null;
 }
 
 export interface QueryResponse {
@@ -118,6 +158,8 @@ export interface SettingsResponse {
   embedding_dimensions: number;
   llm_provider: string;
   llm_model: string;
+  enrichment_llm_model: string | null;
+  reasoning_effort: string;
   reranker_provider: string;
   reranker_model: string;
   parser: string;
@@ -147,9 +189,9 @@ export interface HealthResponse {
 }
 
 // --- WebSocket ---
-export type WSMessageType = "token" | "sources" | "metadata" | "done" | "error";
+export type WSMessageType = "token" | "sources" | "usage" | "metadata" | "done" | "error";
 
 export interface WSMessage {
   type: WSMessageType;
-  content?: string | SourceResponse[] | QueryMetadata;
+  content?: string | SourceResponse[] | QueryMetadata | QueryUsage;
 }
