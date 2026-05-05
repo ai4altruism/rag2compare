@@ -69,7 +69,7 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="border-t border-sidebar-border px-5 py-3">
-        <p className="text-xs text-sidebar-foreground/40">Sprint 6</p>
+        <p className="text-xs text-sidebar-foreground/40">Sprint 7</p>
       </div>
     </aside>
   );

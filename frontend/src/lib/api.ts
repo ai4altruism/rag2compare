@@ -91,15 +91,33 @@ export function getDocument(id: string): Promise<DocumentResponse> {
   return request(`/documents/${id}`);
 }
 
-export async function uploadDocument(
+/**
+ * Upload one or more PDFs to a collection.
+ *
+ * Optional `tags` are JSON-encoded into the `tags_json` form field and stamped
+ * on every uploaded document in the batch — the experiment uses this to label
+ * each paper with domain/role/year/authors. Passing `tags: null` on a single
+ * file behaves the same as omitting it.
+ *
+ * Returns one DocumentResponse per uploaded file (the API returns a list).
+ */
+export async function uploadDocuments(
   collectionId: string,
-  file: File,
-): Promise<DocumentResponse> {
+  files: File[],
+  tags?: Record<string, unknown> | null,
+): Promise<DocumentResponse[]> {
   const formData = new FormData();
-  formData.append("file", file);
-  formData.append("collection_id", collectionId);
+  for (const f of files) {
+    formData.append("files", f);
+  }
+  if (tags && Object.keys(tags).length > 0) {
+    formData.append("tags_json", JSON.stringify(tags));
+  }
 
-  const res = await fetch(`${BASE_URL}/documents/upload`, {
+  // The backend reads collection_id as a query parameter (string) and the
+  // file list + tags_json as multipart fields.
+  const url = `${BASE_URL}/documents/upload?collection_id=${encodeURIComponent(collectionId)}`;
+  const res = await fetch(url, {
     method: "POST",
     body: formData,
     // Don't set Content-Type — browser sets it with boundary
@@ -109,6 +127,16 @@ export async function uploadDocument(
     throw new ApiError(res.status, res.statusText, body);
   }
   return res.json();
+}
+
+/** Single-file convenience wrapper around uploadDocuments. */
+export async function uploadDocument(
+  collectionId: string,
+  file: File,
+  tags?: Record<string, unknown> | null,
+): Promise<DocumentResponse> {
+  const [doc] = await uploadDocuments(collectionId, [file], tags);
+  return doc;
 }
 
 export function reingestDocument(
