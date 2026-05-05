@@ -1,0 +1,85 @@
+# Judge rubric for the RAG vs LLM Wiki experiment.
+#
+# Each criterion is scored 1-10 with anchored definitions for the endpoints
+# (and one mid-point at 5) so the Judge LLM has consistent calibration
+# across questions. Add or remove criteria freely; judge_runs.py reads
+# whatever is here.
+
+criteria:
+  - id: groundedness
+    label: Groundedness
+    description: |
+      Does every substantive claim in the answer point to source material
+      that actually contains it? Verbatim quotes, page numbers, and named
+      papers are all valid grounding signals.
+    anchors:
+      "1": >
+        No grounding. Claims are unsupported, fabricated, or attributed to
+        sources that do not contain them.
+      "5": >
+        Mixed. Some claims are well-cited; others are paraphrased without
+        traceability or rely on plausible-sounding-but-unverifiable
+        background knowledge.
+      "10": >
+        Fully grounded. Every non-trivial claim is traceable to a specific
+        chunk, with verbatim spans or precise paraphrases plus page/section
+        anchors. No reliance on outside knowledge.
+
+  - id: structural_integrity
+    label: Structural Integrity
+    description: |
+      Does the answer read as a unified narrative that synthesizes the
+      sources into a coherent argument, or as a list of disconnected
+      retrieved fragments? Penalize bullet-point dumps where prose is
+      called for and reward structure that mirrors the question's logic.
+    anchors:
+      "1": >
+        Disjointed. Reads as concatenated chunks with no through-line; the
+        reader must reconstruct the argument themselves.
+      "5": >
+        Partially structured. Has an introduction or summary but the body
+        is still chunk-shaped; transitions are weak.
+      "10": >
+        Cohesive. The answer is a unified, well-organized argument that
+        directly addresses the question, with structure that reflects the
+        question's logical demands (chronology, contrast, causal chain).
+
+  - id: conflict_awareness
+    label: Conflict Awareness
+    description: |
+      When the corpus contains contradictory or conflicting findings on
+      the question, does the answer surface the disagreement explicitly,
+      attribute each side to specific papers, and (where appropriate)
+      explain why they disagree? For non-conflict questions this scores
+      n/a — judge whether the answer correctly identifies that there is
+      no conflict to flag.
+    anchors:
+      "1": >
+        Conflict ignored. Answer presents one side as if it were settled,
+        or silently averages over disagreements without acknowledging them.
+      "5": >
+        Conflict mentioned but not resolved. Acknowledges that papers
+        disagree without naming the specific findings or explaining why.
+      "10": >
+        Conflict named, attributed, and (where possible) explained. Each
+        side cited to a specific paper, with a clear statement of where
+        the methodologies or assumptions diverge.
+
+  - id: inter_paper_mapping
+    label: Inter-Paper Mapping
+    description: |
+      Does the answer integrate information from multiple papers in a
+      single sentence or argument (multi-hop synthesis), or only cite
+      one paper at a time? For single-paper questions, judge whether the
+      answer correctly stays within scope.
+    anchors:
+      "1": >
+        Single-paper only. Even when the question demands cross-paper
+        synthesis, the answer cites only one source.
+      "5": >
+        Lists multiple papers but treats them as parallel summaries
+        rather than weaving them together.
+      "10": >
+        Genuine multi-hop. At least one substantive sentence depends on
+        information from two or more papers being put into relation —
+        agreement, contrast, refinement, or causal chain.
