@@ -16,7 +16,10 @@ class TestSettings:
         assert settings.embedding_model == "text-embedding-3-large"
         assert settings.embedding_dimensions == 1024
         assert settings.llm_provider == "anthropic"
-        assert settings.llm_model == "claude-sonnet-4-5-20250929"
+        assert settings.llm_model == "claude-opus-4-7"
+        assert settings.enrichment_llm_model == "claude-sonnet-4-5-20250929"
+        assert settings.reasoning_effort == "xhigh"
+        assert settings.generation_temperature == 0.2
         assert settings.reranker_provider == "cohere"
         assert settings.reranker_model == "rerank-v3.5"
         assert settings.parser == ParserType.DOCLING

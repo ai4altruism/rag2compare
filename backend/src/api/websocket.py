@@ -37,6 +37,7 @@ async def query_stream(websocket: WebSocket):
     Response messages:
     - {"type": "token", "content": "..."} — streaming answer tokens
     - {"type": "sources", "content": [...]} — source citations after stream
+    - {"type": "usage", "content": {...}} — token counts (if reported)
     - {"type": "metadata", "content": {...}} — pipeline metadata
     - {"type": "done"} — stream complete
     - {"type": "error", "content": "..."} — error occurred
@@ -113,6 +114,8 @@ async def _handle_query(websocket: WebSocket, data: dict) -> None:
 
         result = await pipeline.run(query, collection_ids, config)
 
+        reasoning_effort = options.get("reasoning_effort") or settings.reasoning_effort or "off"
+
         # Handle insufficient context
         if result.insufficient_context or not result.context_chunks:
             await websocket.send_json({
@@ -121,7 +124,11 @@ async def _handle_query(websocket: WebSocket, data: dict) -> None:
             })
         else:
             # Stream answer tokens
-            generator = AnswerGenerator(llm_provider)
+            generator = AnswerGenerator(
+                llm_provider,
+                reasoning_effort=reasoning_effort,
+                temperature=settings.generation_temperature,
+            )
             async for token in generator.generate_stream(query, result.context_chunks):
                 await websocket.send_json({"type": "token", "content": token})
 
@@ -139,6 +146,12 @@ async def _handle_query(websocket: WebSocket, data: dict) -> None:
         ]
         await websocket.send_json({"type": "sources", "content": sources})
 
+        # Send usage (token counts) if the provider reported any
+        raw_usage = getattr(llm_provider, "last_usage", None)
+        usage: dict = dict(raw_usage) if isinstance(raw_usage, dict) else {}
+        if usage:
+            await websocket.send_json({"type": "usage", "content": usage})
+
         # Send metadata
         await websocket.send_json({
             "type": "metadata",
@@ -149,6 +162,10 @@ async def _handle_query(websocket: WebSocket, data: dict) -> None:
                 "query_variations": result.query_variations,
                 "latency_ms": result.latency_ms,
                 "model_used": settings.llm_model,
+                "reasoning_effort": reasoning_effort,
+                "prompt_tokens": usage.get("prompt_tokens"),
+                "completion_tokens": usage.get("completion_tokens"),
+                "thinking_tokens": usage.get("thinking_tokens"),
             },
         })
 
