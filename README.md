@@ -217,7 +217,7 @@ Copy `.env.example` to `.env` and populate the values. All settings can also be 
 | `LLM_PROVIDER` | `anthropic` | LLM provider (`anthropic`, `openai`, `ollama`, or any LiteLLM string) |
 | `LLM_MODEL` | `claude-opus-4-7` | Answer-generation model identifier passed to LiteLLM |
 | `ENRICHMENT_LLM_MODEL` | `claude-sonnet-4-5-20250929` | Per-chunk contextual enrichment model (cheaper than answer model). Set blank to reuse `LLM_MODEL`. |
-| `REASONING_EFFORT` | `xhigh` | Anthropic extended-thinking budget: `off / low / medium / high / xhigh` → `0 / 4K / 8K / 16K / 32K` thinking tokens |
+| `REASONING_EFFORT` | `xhigh` | Anthropic adaptive-thinking effort tier: `off / low / medium / high / xhigh / max` (passed via `output_config.effort`). `xhigh` matches Claude Code's xhigh preset; `max` is the absolute ceiling. `off` omits the thinking block entirely. |
 | `EMBEDDING_PROVIDER` | `openai` | Embedding provider |
 | `EMBEDDING_MODEL` | `text-embedding-3-large` | Embedding model name |
 | `EMBEDDING_DIMENSIONS` | `1024` | Vector dimensions |
