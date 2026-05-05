@@ -39,12 +39,16 @@ local = [
     "sentence-transformers>=3.3.0",
 ]
 
+[project.scripts]
+rag2compare-ingest = "scripts.ingest_corpus:main"
+rag2compare-run = "scripts.run_experiment:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src", "scripts"]
 
 [tool.ruff]
 target-version = "py311"
