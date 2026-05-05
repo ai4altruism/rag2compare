@@ -1,15 +1,17 @@
 """Documents API — upload, list, get, delete PDFs."""
 
 import hashlib
+import json
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.api.routes.collections import _qdrant_collection_name
 from src.config import Settings, get_settings
 from src.models.document import Document
+from src.models.ingestion_job import IngestionJob
 from src.providers.base import EmbeddingProvider
 from src.schemas import DocumentResponse, ReingestRequest
 from src.storage import get_embedding_provider, get_qdrant
@@ -19,6 +21,34 @@ from src.storage.qdrant import QdrantStore
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 ALLOWED_CONTENT_TYPES = {"application/pdf"}
+
+
+async def _build_document_response(
+    db: AsyncSession, doc: Document
+) -> DocumentResponse:
+    """Project a Document plus its latest IngestionJob into a response.
+
+    Ingestion timing comes from the most recent IngestionJob row rather
+    than the Document table itself — keeps the schema clean and lets us
+    differentiate first-upload timing from reingest timing later.
+    """
+    stmt = (
+        select(IngestionJob)
+        .where(IngestionJob.document_id == doc.id)
+        .order_by(IngestionJob.created_at.desc())
+        .limit(1)
+    )
+    job = (await db.execute(stmt)).scalar_one_or_none()
+
+    response = DocumentResponse.model_validate(doc)
+    if job:
+        response.ingestion_started_at = job.started_at
+        response.ingestion_completed_at = job.completed_at
+        if job.started_at and job.completed_at:
+            response.ingestion_seconds = (
+                job.completed_at - job.started_at
+            ).total_seconds()
+    return response
 
 
 async def _run_ingestion(
@@ -35,14 +65,16 @@ async def _run_ingestion(
     """Run ingestion in a background task with its own DB session."""
     from src.pipelines.ingestion.pipeline import IngestionPipeline
 
-    # Create LLM provider for enrichment if enabled
+    # Create LLM provider for enrichment if enabled. Uses the dedicated
+    # enrichment_llm_model so the per-chunk summarization pass doesn't pay
+    # Opus rates while answer generation still uses the configured llm_model.
     llm_provider = None
     enrichment = enrichment_override if enrichment_override is not None else settings.contextual_enrichment
     if enrichment:
         try:
-            from src.providers import create_llm_provider
+            from src.providers import create_enrichment_llm_provider
 
-            llm_provider = create_llm_provider(settings)
+            llm_provider = create_enrichment_llm_provider(settings)
         except Exception:
             pass  # Pipeline will log warning and skip enrichment
 
@@ -78,12 +110,32 @@ async def upload_documents(
     files: list[UploadFile],
     collection_id: str,
     background_tasks: BackgroundTasks,
+    tags_json: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
     qdrant: QdrantStore = Depends(get_qdrant),
     embedding_provider: EmbeddingProvider = Depends(get_embedding_provider),
 ):
-    """Upload one or more PDF files to a collection."""
+    """Upload one or more PDF files to a collection.
+
+    Optional `tags_json` form field carries arbitrary metadata (domain,
+    role, year, authors, …) that's stored on every uploaded document in
+    this batch. Used by the experiment runner to label corpus papers.
+    """
+    tags: dict | None = None
+    if tags_json:
+        try:
+            parsed = json.loads(tags_json)
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid tags_json: {e}"
+            ) from e
+        if not isinstance(parsed, dict):
+            raise HTTPException(
+                status_code=400, detail="tags_json must decode to a JSON object"
+            )
+        tags = parsed
+
     max_bytes = settings.max_upload_size_mb * 1024 * 1024
     upload_dir = Path(settings.upload_dir)
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -121,6 +173,7 @@ async def upload_documents(
             file_hash=file_hash,
             page_count=page_count,
             status="pending",
+            tags=tags,
         )
         db.add(doc)
         await db.flush()
@@ -138,7 +191,7 @@ async def upload_documents(
             qdrant=qdrant,
             embedding_provider=embedding_provider,
         )
-        response.append(DocumentResponse.model_validate(doc))
+        response.append(await _build_document_response(db, doc))
 
     return response
 
@@ -156,7 +209,8 @@ async def list_documents(
     if status:
         stmt = stmt.where(Document.status == status)
     result = await db.execute(stmt)
-    return [DocumentResponse.model_validate(doc) for doc in result.scalars().all()]
+    docs = result.scalars().all()
+    return [await _build_document_response(db, d) for d in docs]
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
@@ -165,7 +219,7 @@ async def get_document(document_id: str, db: AsyncSession = Depends(get_db)):
     doc = await db.get(Document, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    return DocumentResponse.model_validate(doc)
+    return await _build_document_response(db, doc)
 
 
 @router.delete("/{document_id}", status_code=204)
@@ -231,7 +285,7 @@ async def reingest_document(
         enrichment_override=enrichment_override,
     )
 
-    return DocumentResponse.model_validate(doc)
+    return await _build_document_response(db, doc)
 
 
 def _find_document_file(upload_dir: Path, file_hash: str | None, filename: str) -> Path | None:

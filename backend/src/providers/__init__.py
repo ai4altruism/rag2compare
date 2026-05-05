@@ -44,20 +44,38 @@ def create_embedding_provider(settings: Settings) -> EmbeddingProvider:
             raise ValueError(f"Unknown embedding provider: {settings.embedding_provider}")
 
 
-def create_llm_provider(settings: Settings) -> LLMProvider:
-    """Instantiate the configured LLM provider."""
+def create_llm_provider(
+    settings: Settings, *, model_override: str | None = None
+) -> LLMProvider:
+    """Instantiate the configured LLM provider.
+
+    `model_override` lets callers (e.g. the ingestion enricher) use a
+    different model than the answer-generation default without touching
+    settings — useful when enrichment runs on a cheaper model.
+    """
+    model = model_override or settings.llm_model
     match settings.llm_provider:
         case "anthropic" | "openai" | "ollama":
             from src.providers.llm.litellm import LiteLLMProvider
 
             return LiteLLMProvider(
-                model=f"{settings.llm_provider}/{settings.llm_model}"
+                model=f"{settings.llm_provider}/{model}"
                 if settings.llm_provider != "openai"
-                else settings.llm_model,
+                else model,
                 api_key=_get_llm_api_key(settings),
             )
         case _:
             raise ValueError(f"Unknown LLM provider: {settings.llm_provider}")
+
+
+def create_enrichment_llm_provider(settings: Settings) -> LLMProvider:
+    """Instantiate the LLM provider used for ingestion-time contextual enrichment.
+
+    Falls back to the answer-generation model when no separate enrichment
+    model is configured.
+    """
+    model = settings.enrichment_llm_model or settings.llm_model
+    return create_llm_provider(settings, model_override=model)
 
 
 def create_reranker_provider(settings: Settings) -> RerankerProvider:

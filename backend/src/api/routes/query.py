@@ -25,6 +25,11 @@ from src.storage.qdrant import QdrantStore
 router = APIRouter(prefix="/query", tags=["query"])
 
 
+def _resolve_reasoning_effort(body: QueryRequest, settings: Settings) -> str:
+    """Per-request override falls back to server default, then 'off'."""
+    return body.options.reasoning_effort or settings.reasoning_effort or "off"
+
+
 @router.post("", response_model=QueryResponse)
 async def submit_query(
     body: QueryRequest,
@@ -81,14 +86,22 @@ async def submit_query(
     )
 
     # Generate answer
+    reasoning_effort = _resolve_reasoning_effort(body, settings)
+    usage: dict = {}
     if result.insufficient_context:
         answer = INSUFFICIENT_CONTEXT_MSG
     elif llm_provider and result.context_chunks:
-        generator = AnswerGenerator(llm_provider)
+        generator = AnswerGenerator(
+            llm_provider,
+            reasoning_effort=reasoning_effort,
+            temperature=settings.generation_temperature,
+        )
         gen_result = await generator.generate(
             body.query, result.context_chunks, conversation_history
         )
         answer = gen_result.answer
+        raw_usage = getattr(llm_provider, "last_usage", None)
+        usage = dict(raw_usage) if isinstance(raw_usage, dict) else {}
     else:
         answer = "Context retrieved. LLM not available for generation."
 
@@ -108,7 +121,14 @@ async def submit_query(
     # Save messages to conversation if conversation_id provided
     if body.conversation_id:
         await _save_messages(
-            db, body.conversation_id, body.query, answer, sources
+            db,
+            body.conversation_id,
+            body.query,
+            answer,
+            sources,
+            model_used=settings.llm_model,
+            latency_ms=result.latency_ms,
+            usage=usage,
         )
 
     return QueryResponse(
@@ -121,6 +141,10 @@ async def submit_query(
             "query_variations": result.query_variations,
             "latency_ms": result.latency_ms,
             "model_used": settings.llm_model,
+            "reasoning_effort": reasoning_effort,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "thinking_tokens": usage.get("thinking_tokens"),
         },
     )
 
@@ -151,6 +175,10 @@ async def _save_messages(
     query: str,
     answer: str,
     sources: list[SourceResponse],
+    *,
+    model_used: str | None = None,
+    latency_ms: int | None = None,
+    usage: dict | None = None,
 ) -> None:
     """Save user query and assistant response to the conversation."""
     user_msg = Message(
@@ -159,11 +187,17 @@ async def _save_messages(
         content=query,
     )
     sources_json = json.dumps([s.model_dump() for s in sources])
+    usage = usage or {}
     assistant_msg = Message(
         conversation_id=conversation_id,
         role="assistant",
         content=answer,
         sources=sources_json,
+        model_used=model_used,
+        latency_ms=latency_ms,
+        prompt_tokens=usage.get("prompt_tokens"),
+        completion_tokens=usage.get("completion_tokens"),
+        thinking_tokens=usage.get("thinking_tokens"),
     )
     db.add(user_msg)
     db.add(assistant_msg)

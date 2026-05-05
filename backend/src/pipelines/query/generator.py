@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 from src.logging import get_logger
 from src.providers.base import LLMProvider
+from src.providers.llm.thinking import thinking_param
 from src.storage.qdrant import SearchResult
 
 logger = get_logger(__name__)
@@ -55,9 +56,33 @@ class AnswerGenerator:
         self,
         llm: LLMProvider,
         system_prompt: str | None = None,
+        reasoning_effort: str | None = None,
+        temperature: float = 0.2,
     ):
         self._llm = llm
         self._system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+        self._reasoning_effort = reasoning_effort
+        self._temperature = temperature
+
+    def _llm_kwargs(self, *, stream: bool = False) -> dict:
+        """Build per-call kwargs for the LLM, honoring extended-thinking rules.
+
+        Anthropic extended thinking requires temperature=1.0 — passing 0.2
+        with thinking enabled would be silently rejected or downgraded by the
+        provider, so we override here.
+        """
+        thinking = thinking_param(self._reasoning_effort)
+        kwargs: dict = {}
+        if thinking is not None:
+            kwargs["thinking"] = thinking
+            kwargs["temperature"] = 1.0
+        else:
+            kwargs["temperature"] = self._temperature
+        if stream:
+            # Ask LiteLLM to include a final usage chunk so callers can record
+            # prompt/completion/thinking token counts.
+            kwargs["stream_options"] = {"include_usage": True}
+        return kwargs
 
     async def generate(
         self,
@@ -79,13 +104,14 @@ class AnswerGenerator:
         context_text = self._format_context(context_chunks)
         messages = self._build_messages(query, context_text, conversation_history)
 
-        answer = await self._llm.generate(messages, temperature=0.2)
+        answer = await self._llm.generate(messages, **self._llm_kwargs())
 
         logger.info(
             "answer_generated",
             query=query[:100],
             context_chunks=len(context_chunks),
             answer_length=len(answer),
+            reasoning_effort=self._reasoning_effort or "off",
         )
 
         return GenerationResult(answer=answer, citations=citations)
@@ -103,7 +129,7 @@ class AnswerGenerator:
         context_text = self._format_context(context_chunks)
         messages = self._build_messages(query, context_text, conversation_history)
 
-        async for token in self._llm.generate_stream(messages, temperature=0.2):
+        async for token in self._llm.generate_stream(messages, **self._llm_kwargs(stream=True)):
             yield token
 
     def _build_messages(
@@ -115,11 +141,9 @@ class AnswerGenerator:
         """Build the message list for the LLM."""
         messages = [{"role": "system", "content": self._system_prompt}]
 
-        # Add conversation history if provided
         if conversation_history:
             messages.extend(conversation_history)
 
-        # Add context and query
         user_content = f"""Context chunks:
 
 {context_text}

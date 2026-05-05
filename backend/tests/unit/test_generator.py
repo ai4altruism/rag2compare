@@ -105,12 +105,46 @@ class TestAnswerGenerator:
         assert result.citations[0].index == 1
         assert result.citations[1].index == 2
 
-    async def test_generate_uses_low_temperature(self, mock_llm):
+    async def test_generate_uses_low_temperature_by_default(self, mock_llm):
         gen = AnswerGenerator(mock_llm)
         await gen.generate("q", [_make_chunk("c1", 0.9)])
 
         kwargs = mock_llm.generate.call_args[1]
         assert kwargs["temperature"] == 0.2
+        assert "thinking" not in kwargs
+
+    async def test_generate_with_xhigh_thinking_passes_thinking_and_temp_1(self, mock_llm):
+        gen = AnswerGenerator(mock_llm, reasoning_effort="xhigh")
+        await gen.generate("q", [_make_chunk("c1", 0.9)])
+
+        kwargs = mock_llm.generate.call_args[1]
+        assert kwargs["temperature"] == 1.0  # Anthropic extended-thinking requirement
+        assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 32_000}
+
+    async def test_generate_with_off_thinking_keeps_low_temp(self, mock_llm):
+        gen = AnswerGenerator(mock_llm, reasoning_effort="off", temperature=0.2)
+        await gen.generate("q", [_make_chunk("c1", 0.9)])
+
+        kwargs = mock_llm.generate.call_args[1]
+        assert kwargs["temperature"] == 0.2
+        assert "thinking" not in kwargs
+
+    async def test_generate_stream_passes_include_usage(self, mock_llm):
+        captured: dict = {}
+
+        async def mock_stream(messages, **kwargs):
+            captured.update(kwargs)
+            for token in ["a", "b"]:
+                yield token
+
+        mock_llm.generate_stream = mock_stream
+        gen = AnswerGenerator(mock_llm, reasoning_effort="xhigh")
+        async for _ in gen.generate_stream("q", [_make_chunk("c1", 0.9)]):
+            pass
+
+        assert captured["stream_options"] == {"include_usage": True}
+        assert captured["thinking"] == {"type": "enabled", "budget_tokens": 32_000}
+        assert captured["temperature"] == 1.0
 
     async def test_generate_stream(self, mock_llm):
         async def mock_stream(*args, **kwargs):

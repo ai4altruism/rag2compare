@@ -43,7 +43,17 @@ class Settings(BaseSettings):
 
     # --- LLM Provider ---
     llm_provider: str = "anthropic"
-    llm_model: str = "claude-sonnet-4-5-20250929"
+    llm_model: str = "claude-opus-4-7"
+    # Separate model for ingestion-time contextual enrichment. Defaults to a
+    # cheaper Sonnet model so the per-chunk summarization pass doesn't pay
+    # Opus rates. Set to empty string to use llm_model for enrichment too.
+    enrichment_llm_model: str = "claude-sonnet-4-5-20250929"
+    # Anthropic extended-thinking effort: off | low | medium | high | xhigh.
+    # When non-"off", answer generation forces temperature=1.0 (Anthropic
+    # requirement). See providers/llm/thinking.py.
+    reasoning_effort: str = "xhigh"
+    # Default temperature for answer generation when reasoning is "off".
+    generation_temperature: float = 0.2
 
     # --- Reranker Provider ---
     reranker_provider: str = "cohere"
