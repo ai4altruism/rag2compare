@@ -10,12 +10,13 @@ results can be compared against a parallel run on the LLM Wiki side.
 ```
 experiments/
 ├── corpus.yaml          24-paper manifest (collections, role tags, file paths)
-├── questions.yaml       12 evaluation questions (5 tiers + 3 RAG-favoring)
+├── questions.yaml       13 evaluation questions (5 tiers + 3 RAG-favoring)
+├── rubric.yaml          4-criterion judge rubric (1-10 anchored)
 ├── papers/              PDFs go here, organized by domain (gitignored)
 │   ├── ai-ethics-law/
 │   ├── climate-science/
 │   └── precision-medicine/
-├── results/             ingest-<ts>.json and run-<ts>.json (gitignored)
+├── results/             ingest-<ts>.json, run-<ts>.json, judged-<ts>.json (gitignored)
 └── README.md            this file
 ```
 
@@ -155,10 +156,115 @@ Edit `questions.yaml` freely; the runner accepts any valid question shape.
 }
 ```
 
-## Comparison against the Wiki run
+## Step 3 — Score against the Wiki run with a judge LLM
 
-Out of scope for this repo — once both `ingest-*.json` (RAG) and the
-Wiki-side ingest log exist, score offline against the rubric:
-groundedness (verbatim quote → chunk match), compounding (cross-paper
-citations within a single answer), contradiction handling (does the
-answer name the disagreement?), latency, and total token cost.
+```bash
+rag2compare-judge \
+  --rag-run experiments/results/run-<rag-ts>.json \
+  --wiki-run path/to/wiki-run.json \
+  --rubric experiments/rubric.yaml
+# or:
+python -m scripts.judge_runs --rag-run ... --wiki-run ... --rubric ...
+```
+
+What it does:
+
+1. Loads both runs and pairs them by question `id` (warns about
+   anything that doesn't match).
+2. For each pair, blinds the answers as System A / System B with a
+   seeded RNG. The mapping is recorded in the output so results stay
+   un-blindable for analysis.
+3. Submits the question, both blinded answers, both source lists, and
+   the rubric (with anchor definitions) to the Judge LLM. Demands a
+   structured JSON response.
+4. Parses scores per system per criterion, plus a notes field. Records
+   the full raw response for audit.
+5. Computes per-system, per-criterion, and per-tier means.
+6. Writes `experiments/results/judged-<timestamp>.json`.
+
+**Default judge: `gpt-5` (cross-family).** Using Claude to judge Claude
+has documented self-preference bias, so the judge defaults to OpenAI's
+flagship. Override with `--judge-model` if you need something else.
+
+**Wiki run shape.** The Wiki run JSON must use the same schema as the
+RAG runner produces — `{"results": [{"id", "tier", "bias", "text",
+"answer", "sources": [...], "metadata": {...}}, ...]}`. Sources should
+include at least `filename`, `page_numbers`, `chunk_text`, and
+`relevance_score` so the judge can verify groundedness against the same
+shape it sees on the RAG side.
+
+Useful flags:
+
+| Flag                          | Purpose                                                                              |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
+| `--judge-model`               | Primary judge (default `gpt-5`)                                                      |
+| `--reasoning-effort`          | `low` / `medium` / `high` (default `medium` — judging is less reasoning-heavy)       |
+| `--secondary-judge MODEL`     | Run a second judge for inter-rater reliability                                       |
+| `--secondary-judge-questions` | Comma-separated question ids the secondary judge should re-score                     |
+| `--seed`                      | RNG seed for blinding (default 42; same seed → same A/B mapping)                     |
+| `--max-questions N`           | Cap (useful for cost-bounded smoke runs)                                             |
+| `--resume PATH`               | Skip questions already scored by the same judge in a prior `judged-*.json`           |
+| `--dry-run`                   | Print the planned judging without calling the LLM                                    |
+
+### Inter-rater reliability spot-check
+
+Pick 3 questions across the tiers and re-judge with a different family
+to make sure the primary judge's calibration isn't drifting:
+
+```bash
+rag2compare-judge \
+  --rag-run ... --wiki-run ... --rubric experiments/rubric.yaml \
+  --secondary-judge gemini-2.5-pro \
+  --secondary-judge-questions T1-cardio-baselines,T3-mia-as-copyright-evidence,B1-devote3-confidence-interval
+```
+
+The output's `secondary.agreement.max_deltas` field gives the worst
+per-criterion delta between the two judges. Investigate any criterion
+where the max delta exceeds 2.
+
+### Output schema (`judged-<ts>.json`)
+
+```json
+{
+  "judged_at": "20260504T220000Z",
+  "rag_run": ".../run-<rag-ts>.json",
+  "wiki_run": ".../wiki-run.json",
+  "rubric": ".../rubric.yaml",
+  "judge_model": "gpt-5",
+  "reasoning_effort": "medium",
+  "seed": 42,
+  "criteria": ["groundedness", "structural_integrity", "conflict_awareness", "inter_paper_mapping"],
+  "judgments": [
+    {
+      "question_id": "T3-mia-as-copyright-evidence",
+      "tier": "multi-hop",
+      "bias": "wiki",
+      "blinding": { "A": "wiki", "B": "rag" },
+      "rag_scores": { "groundedness": 7, "structural_integrity": 6, "conflict_awareness": 5, "inter_paper_mapping": 4 },
+      "wiki_scores": { "groundedness": 8, "structural_integrity": 9, "conflict_awareness": 8, "inter_paper_mapping": 9 },
+      "notes": "...",
+      "raw_response": "...",
+      "error": null
+    }
+  ],
+  "aggregate": {
+    "overall": { "n": 13, "rag": { ... }, "wiki": { ... } },
+    "by_tier": { "multi-hop": { "n": 2, "rag": { ... }, "wiki": { ... } }, ... }
+  },
+  "secondary": null
+}
+```
+
+## Comparison against the Wiki run — testing the hypotheses
+
+With `judged-<ts>.json` in hand, the experiment's three hypotheses
+become straightforward to evaluate:
+
+- **H1 (Synthesis):** check that `aggregate.by_tier["multi-hop"].wiki`
+  exceeds `.rag` on `inter_paper_mapping` and `structural_integrity`.
+- **H2 (Fact retrieval):** check that `aggregate.by_tier["bias-check"].rag`
+  meets or exceeds `.wiki` on `groundedness`.
+- **H3 (Efficiency):** combine the `judged-*.json` aggregates with the
+  `ingest-*.json` totals from Step 1 — Wiki should have the higher
+  ingest cost; RAG should have the higher per-query cost (especially in
+  thinking_tokens at xhigh effort, recorded in each query's metadata).
