@@ -24,6 +24,13 @@ node_modules/
 # Data directories
 data/
 
+# Experiment artifacts — large PDFs and generated result JSONs are not
+# checked in; only the manifest/questions/README live in the repo.
+experiments/papers/**
+!experiments/papers/**/.gitkeep
+experiments/results/**
+!experiments/results/.gitkeep
+
 # IDE
 .vscode/
 .idea/

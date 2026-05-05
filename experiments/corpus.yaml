@@ -1,0 +1,204 @@
+# Corpus manifest for the RAG vs LLM Wiki experiment.
+#
+# 24 papers across 3 domains (8 each). Roles drive ingestion order so the
+# RAG side mirrors how the Wiki was built:
+#   Anchor    -> ingested first; establishes schema/foundational definitions
+#   Chrono    -> historical / evolving knowledge
+#   Bridge    -> cross-domain or technical/legal connectors
+#   Conflict  -> contradictions; ingested last to stress the contextual store
+#
+# The PDFs themselves are NOT committed. Drop them into
+# experiments/papers/<domain>/ matching the `file:` path here. The ingest
+# CLI prints which ones are missing so you can correct paths if needed.
+
+ingest_order: [Anchor, Chrono, Bridge, Conflict]
+
+collections:
+  - name: ai-ethics-law
+    description: |
+      AI Ethics & Law domain — copyright/fair-use disputes around generative
+      AI, with technical detection methods (membership inference attacks)
+      bridging the legal and engineering literatures.
+    documents:
+      - file: papers/ai-ethics-law/stober_dornis_2026.pdf
+        tags:
+          domain: ai-ethics-law
+          role: Anchor
+          year: 2026
+          authors: Stober & Dornis
+          title: Generative AI Training and Copyright Law
+      - file: papers/ai-ethics-law/liang_lut_2026.pdf
+        tags:
+          domain: ai-ethics-law
+          role: Anchor
+          year: 2026
+          authors: Liang & Lut
+          title: Creative Ownership in the Age of AI
+      - file: papers/ai-ethics-law/ranjan_2026_gdrift.pdf
+        tags:
+          domain: ai-ethics-law
+          role: Technical Bridge
+          year: 2026
+          authors: Ranjan et al.
+          title: G-Drift MIA — Membership Inference via Gradient-Induced Feature Drift in LLMs
+      - file: papers/ai-ethics-law/liu_2026_music_diffusion_mia.pdf
+        tags:
+          domain: ai-ethics-law
+          role: Technical Bridge
+          year: 2026
+          authors: Liu et al.
+          title: Membership Inference Attack Against Music Diffusion Models
+      - file: papers/ai-ethics-law/hutiri_scheuerman_2026_optin.pdf
+        tags:
+          domain: ai-ethics-law
+          role: Conflict
+          year: 2026
+          authors: Hutiri & Scheuerman
+          title: Yes, But Not Always — Generative AI Needs Nuanced Opt-in
+      - file: papers/ai-ethics-law/atkinson_2025_unfair_learning.pdf
+        tags:
+          domain: ai-ethics-law
+          role: Conflict
+          year: 2025
+          authors: Atkinson
+          title: Unfair Learning — GenAI Exceptionalism and Copyright Law
+      - file: papers/ai-ethics-law/chow_2025_music_mia.pdf
+        tags:
+          domain: ai-ethics-law
+          role: Chrono
+          year: 2025
+          authors: Chow et al.
+          title: Assessing the Effectiveness of Membership Inference on Generative Music
+      - file: papers/ai-ethics-law/choquette-choo_2021_label_only_mia.pdf
+        tags:
+          domain: ai-ethics-law
+          role: Chrono
+          year: 2021
+          authors: Choquette-Choo et al.
+          title: Label-Only Membership Inference Attacks
+
+  - name: climate-science
+    description: |
+      Climate Science domain — Marine Carbon Removal / Ocean Alkalinity
+      Enhancement (OAE), contrasting chemical efficiency models with
+      biological feedback and ecological-impact studies.
+    documents:
+      - file: papers/climate-science/oschlies_2023_oae.pdf
+        tags:
+          domain: climate-science
+          role: Anchor
+          year: 2023
+          authors: Oschlies et al.
+          title: Climate Targets, Carbon Dioxide Removal, and the Potential Role of OAE
+      - file: papers/climate-science/he_tyka_2023_near_coast_oae.pdf
+        tags:
+          domain: climate-science
+          role: Chrono/Anchor
+          year: 2023
+          authors: He & Tyka
+          title: Limits and CO2 Equilibration of Near-Coast Alkalinity Enhancement
+      - file: papers/climate-science/ho_2023_oae_mrv.pdf
+        tags:
+          domain: climate-science
+          role: Meta Bridge
+          year: 2023
+          authors: Ho et al.
+          title: Monitoring, Reporting, and Verification for Ocean Alkalinity Enhancement
+      - file: papers/climate-science/mcelhany_2026_lit_tag.pdf
+        tags:
+          domain: climate-science
+          role: Meta Bridge
+          year: 2026
+          authors: McElhany et al.
+          title: lit-tag — A Shiny App for Adding Custom Tags and Notes to a Citation Database
+      - file: papers/climate-science/savoie_2025_field_trial.pdf
+        tags:
+          domain: climate-science
+          role: Chrono
+          year: 2025
+          authors: Savoie et al.
+          title: Novel Field Trial for OAE Using Electrochemically Derived Aqueous Alkalinity
+      - file: papers/climate-science/jones_2025_eelgrass.pdf
+        tags:
+          domain: climate-science
+          role: Conflict
+          year: 2025
+          authors: Jones et al.
+          title: Biological Response of Eelgrass Epifauna to Elevated Ocean Alkalinity
+      - file: papers/climate-science/schneider_2025_air_sea.pdf
+        tags:
+          domain: climate-science
+          role: Conflict
+          year: 2025
+          authors: Schneider et al.
+          title: Air-Sea Gas Exchange in Response to OAE in a Temperate Plankton Community
+      - file: papers/climate-science/nagwekar_2025_oae_modeling.pdf
+        tags:
+          domain: climate-science
+          role: Conflict
+          year: 2025
+          authors: Nagwekar
+          title: Modeling Ocean Alkalinity Enhancement in Subduction Regions and the Global Ocean
+
+  - name: precision-medicine
+    description: |
+      Precision Medicine domain — GLP-1 receptor agonists (semaglutide,
+      tirzepatide) and their systemic effects, contrasting RCT data with
+      real-world evidence.
+    documents:
+      - file: papers/precision-medicine/qiu_2026_rct_rwd.pdf
+        tags:
+          domain: precision-medicine
+          role: Anchor
+          year: 2026
+          authors: Qiu et al.
+          title: Considerations for the Integration of RCTs and Real-World Data
+      - file: papers/precision-medicine/kupnicka_2024_glp1_review.pdf
+        tags:
+          domain: precision-medicine
+          role: Anchor
+          year: 2024
+          authors: Kupnicka et al.
+          title: GLP-1 Receptor Agonists — A Promising Therapy for Modern Lifestyle Diseases
+      - file: papers/precision-medicine/barakat_2026_ai_semaglutide.pdf
+        tags:
+          domain: precision-medicine
+          role: Technical Bridge
+          year: 2026
+          authors: Barakat et al.
+          title: AI-Enabled Personalization of Semaglutide Therapy in Type 2 Diabetes
+      - file: papers/precision-medicine/kong_2025_berberine.pdf
+        tags:
+          domain: precision-medicine
+          role: Bridge
+          year: 2025
+          authors: Kong et al.
+          title: Progress of the Anti-Obesity of Berberine
+      - file: papers/precision-medicine/martinussen_2026_qol_survival.pdf
+        tags:
+          domain: precision-medicine
+          role: Conflict
+          year: 2026
+          authors: Martinussen et al.
+          title: A Joint QoL-Survival Framework with Debiased Estimation under Truncation by Death
+      - file: papers/precision-medicine/sehgal_2026_reddit_side_effects.pdf
+        tags:
+          domain: precision-medicine
+          role: Conflict
+          year: 2026
+          authors: Sehgal et al.
+          title: Self-Reported Side Effects of Semaglutide and Tirzepatide in Online Communities
+      - file: papers/precision-medicine/beheshti_2025_parkinsons.pdf
+        tags:
+          domain: precision-medicine
+          role: Chrono
+          year: 2025
+          authors: Beheshti
+          title: Risk and Protective Factors in Parkinson's Disease
+      - file: papers/precision-medicine/pieber_2017_devote3.pdf
+        tags:
+          domain: precision-medicine
+          role: Chrono/Baseline
+          year: 2017
+          authors: Pieber et al.
+          title: DEVOTE 3 — Severe Hypoglycaemia, Cardiovascular Outcomes and Mortality

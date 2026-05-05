@@ -1,0 +1,167 @@
+# Evaluation questions for the RAG vs LLM Wiki experiment.
+#
+# Each question has:
+#   id            stable identifier; included in the result JSON
+#   tier          one of: chronological | conflict | multi-hop | emergence | policy | bias-check
+#   bias          which approach the question is expected to favor:
+#                   rag         - point-source retrieval; RAG should excel
+#                   wiki        - synthesis / compounding; Wiki should excel
+#                   neutral     - pivots without strong directional bias
+#   collections   list of collection names (must match collections in corpus.yaml).
+#                 Use all three for cross-domain multi-hop questions.
+#   text          the prompt actually sent to /query
+#
+# Mix is intentional per the user's "don't bias toward Wiki" guidance:
+# tiers 1-5 cover Wiki strengths, plus 3 dedicated bias-check (RAG-favoring)
+# point-source questions to keep the comparison fair.
+
+questions:
+  # ---- Tier 1: Chronological evolution (updates vs. appends) ----
+  - id: T1-cardio-baselines
+    tier: chronological
+    bias: neutral
+    collections: [precision-medicine]
+    text: |
+      Based on the DEVOTE 3 trial and the 2026 Qiu et al. framework for
+      integrating RCTs with real-world data, what are the current standard
+      cardiovascular risk baselines used to evaluate new GLP-1 analogs, and
+      how does the 2026 framework revise the interpretation of the 2017
+      DEVOTE 3 numbers?
+
+  - id: T1-mia-evolution
+    tier: chronological
+    bias: neutral
+    collections: [ai-ethics-law]
+    text: |
+      How have membership inference attacks against generative-audio models
+      evolved from the 2021 label-only formulation (Choquette-Choo et al.)
+      through the 2025 effectiveness assessments to the 2026 LSA-Probe /
+      manifold-perturbation methodology described by Liu et al.? Treat this
+      as a technical evolution, not a list.
+
+  # ---- Tier 2: Conflict detection (linting capability) ----
+  - id: T2-oae-bio-vs-chemical
+    tier: conflict
+    bias: wiki
+    collections: [climate-science]
+    text: |
+      Contrast the He & Tyka (2023) chemical-efficiency model for near-coast
+      OAE with the 2025 Schneider et al. findings on biological influence on
+      air-sea gas exchange. Does biological activity accelerate or
+      decelerate equilibration, and where do the papers actually disagree
+      versus agree on mechanism?
+
+  - id: T2-fair-use-vs-optin
+    tier: conflict
+    bias: wiki
+    collections: [ai-ethics-law]
+    text: |
+      How does the "Unfair Learning" argument (Atkinson, 2025) conflict
+      with the "Nuanced Opt-in" proposal (Hutiri & Scheuerman, 2026) on
+      the status of publicly available training data? Identify the
+      specific claim each paper makes and where they are not actually
+      addressing the same question.
+
+  # ---- Tier 3: Multi-hop technical synthesis ----
+  - id: T3-mia-as-copyright-evidence
+    tier: multi-hop
+    bias: wiki
+    collections: [ai-ethics-law]
+    text: |
+      Propose a forensic workflow that uses the G-Drift gradient-induced
+      feature drift (Ranjan et al., 2026) to detect whether a specific
+      training set was used by a target model, and connect it to the
+      "counterfactual infringement" criterion proposed by Liang & Lut
+      (2026) and the substantial-similarity threshold discussed in
+      Stober & Dornis (2026). Be explicit about which paper supports
+      each step.
+
+  - id: T3-rwd-validity-for-side-effects
+    tier: multi-hop
+    bias: wiki
+    collections: [precision-medicine]
+    text: |
+      Using the Qiu et al. (2026) framework for integrating RCTs and
+      real-world data, analyze whether the Reddit-sourced GLP-1 side
+      effects reported by Sehgal et al. (2026) meet the criteria for
+      regulatory-grade real-world evidence, and what additional analysis
+      (per Martinussen et al.'s QoL-survival framework) would be needed
+      to draw safety conclusions.
+
+  # ---- Tier 4: Emergence / discovery ("Memex" test) ----
+  - id: T4-eelgrass-mrv-gaps
+    tier: emergence
+    bias: wiki
+    collections: [climate-science]
+    text: |
+      Based on Jones et al.'s (2025) study of eelgrass epifauna response
+      to elevated ocean alkalinity and Ho et al.'s (2023) MRV protocols
+      for OAE, identify three potential ecological bottlenecks that
+      current MRV protocols fail to monitor. For each, cite which paper
+      supports the gap.
+
+  - id: T4-cross-domain-audit
+    tier: emergence
+    bias: wiki
+    collections: [ai-ethics-law, precision-medicine]
+    text: |
+      How could a researcher use the G-Drift MIA technical mechanism
+      and the counterfactual-infringement framework to audit whether
+      DEVOTE 3 trial data was used to train a medical personalization
+      model (e.g. the AI-enabled semaglutide personalization in Barakat
+      et al. 2026) without authorization? Identify which step requires
+      which paper.
+
+  # ---- Tier 5: Policy / strategy ----
+  - id: T5-glp1-policy
+    tier: policy
+    bias: wiki
+    collections: [precision-medicine]
+    text: |
+      Develop a policy recommendation for a national health board on
+      the use of AI-enabled semaglutide personalization, incorporating
+      Martinussen et al.'s warning about survival-truncation bias in
+      QoL endpoints and the Qiu et al. (2026) RCT/RWD integration
+      framework. Avoid a generic recommendation — anchor each clause to
+      a specific paper.
+
+  - id: T5-25th-paper
+    tier: policy
+    bias: wiki
+    collections: [ai-ethics-law, climate-science, precision-medicine]
+    text: |
+      If you were to add a 25th paper to this corpus, should it focus
+      on (a) the pharmacokinetics of GLP-1 receptor agonists, (b) the
+      chemical precipitation of NaOH in seawater for OAE, or (c) the
+      EU legal status of "style" in generative AI? Justify the choice
+      based on knowledge orphans / weakly-connected concepts visible in
+      the current corpus.
+
+  # ---- Bias-check: point-source retrieval (RAG should excel) ----
+  - id: B1-devote3-confidence-interval
+    tier: bias-check
+    bias: rag
+    collections: [precision-medicine]
+    text: |
+      What is the exact reported hazard ratio and 95% confidence
+      interval for the primary cardiovascular outcome in the DEVOTE 3
+      trial results section?
+
+  - id: B2-he-tyka-equilibration-ratios
+    tier: bias-check
+    bias: rag
+    collections: [climate-science]
+    text: |
+      In He & Tyka (2023), what is the specific range of mol DIC
+      uptake per mol NaOH added that the paper reports for near-coast
+      alkalinity enhancement? Cite the exact numbers and any conditions
+      attached.
+
+  - id: B3-mia-attack-success-rate
+    tier: bias-check
+    bias: rag
+    collections: [ai-ethics-law]
+    text: |
+      What attack success rate (or AUROC) does Choquette-Choo et al.
+      (2021) report for label-only membership inference attacks on the
+      CIFAR-10 dataset? Quote the value and the attack variant.
