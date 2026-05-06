@@ -100,3 +100,25 @@ class TestBM25SparseEncoder:
         encoder = BM25SparseEncoder(vocab_size=500)
         for word in ["cat", "dog", "bird", "fish", "python"]:
             assert 0 <= encoder._hash_token(word) < 500
+
+    def test_indices_unique_under_hash_collisions(self):
+        """Distinct tokens hashing to the same bucket must not produce dup indices.
+
+        Qdrant's sparse-vector validator rejects vectors with duplicate
+        indices, so the encoder must aggregate weights per bucket.
+        """
+        # vocab_size=2 forces collisions across any non-trivial token set.
+        encoder = BM25SparseEncoder(vocab_size=2)
+        result = encoder.encode(
+            "alpha beta gamma delta epsilon zeta eta theta iota kappa"
+        )
+        assert len(result.indices) == len(set(result.indices)), \
+            f"duplicate indices: {result.indices}"
+
+    def test_collision_weights_aggregate(self):
+        """Two distinct tokens hashing to the same bucket should sum their weights."""
+        encoder = BM25SparseEncoder(vocab_size=2)
+        # Single-token vector — sets a baseline weight at some bucket.
+        single = encoder.encode("alpha")
+        many = encoder.encode("alpha beta gamma delta")
+        assert sum(many.values) > sum(single.values)

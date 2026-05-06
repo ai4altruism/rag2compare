@@ -7,11 +7,16 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      QDRANT_URL: http://qdrant:6333
     volumes:
       - ./data:/app/data
+      - ./experiments:/app/experiments
+      # Override the installed `scripts` package with the live source tree so
+      # CLI tweaks pick up on container restart instead of needing an image rebuild.
+      - ./backend/scripts:/usr/local/lib/python3.12/site-packages/scripts
     depends_on:
-      qdrant:
-        condition: service_healthy
+      - qdrant
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health')"]
       interval: 30s

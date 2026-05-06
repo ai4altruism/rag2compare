@@ -182,6 +182,11 @@ async def upload_documents(
         await db.refresh(doc)
         documents.append((doc, file_path))
 
+    # Commit before scheduling background tasks: _run_ingestion opens its own
+    # engine/session and would race the dependency-injected commit otherwise,
+    # missing the row entirely and silently leaving the doc stuck in `pending`.
+    await db.commit()
+
     # Schedule background ingestion for each document
     response = []
     for doc, fpath in documents:
@@ -267,6 +272,10 @@ async def reingest_document(
     file_path = _find_document_file(upload_dir, doc.file_hash, doc.filename)
     if not file_path:
         raise HTTPException(status_code=404, detail="Source PDF file not found on disk")
+
+    # Commit the status flip before scheduling the background task so the
+    # task's independent session sees the latest state.
+    await db.commit()
 
     # Parse overrides from request body
     parser_override = body.parser if body else None
