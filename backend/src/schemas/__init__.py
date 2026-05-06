@@ -46,6 +46,8 @@ class DocumentResponse(BaseModel):
     ingestion_started_at: datetime | None = None
     ingestion_completed_at: datetime | None = None
     ingestion_seconds: float | None = None
+    ingestion_prompt_tokens: int | None = None
+    ingestion_completion_tokens: int | None = None
     created_at: datetime
     updated_at: datetime
 

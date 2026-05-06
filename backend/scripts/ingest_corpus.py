@@ -56,6 +56,8 @@ class IngestRecord:
     chunk_count: int | None
     error_message: str | None
     file_size_bytes: int | None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +246,8 @@ def run(args: argparse.Namespace) -> int:
                             chunk_count=hit.get("chunk_count"),
                             error_message=None,
                             file_size_bytes=hit.get("file_size_bytes"),
+                            prompt_tokens=hit.get("ingestion_prompt_tokens"),
+                            completion_tokens=hit.get("ingestion_completion_tokens"),
                         )
                     )
                     continue
@@ -305,6 +309,8 @@ def run(args: argparse.Namespace) -> int:
                     chunk_count=final.get("chunk_count"),
                     error_message=final.get("error_message"),
                     file_size_bytes=final.get("file_size_bytes"),
+                    prompt_tokens=final.get("ingestion_prompt_tokens"),
+                    completion_tokens=final.get("ingestion_completion_tokens"),
                 )
             )
 
@@ -324,15 +330,28 @@ def _build_payload(
     by_domain: dict[str, dict] = {}
     for r in records:
         d = by_domain.setdefault(
-            r.domain, {"documents": 0, "completed": 0, "total_seconds": 0.0}
+            r.domain,
+            {
+                "documents": 0,
+                "completed": 0,
+                "total_seconds": 0.0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+            },
         )
         d["documents"] += 1
         if r.status == "completed":
             d["completed"] += 1
         if r.ingestion_seconds:
             d["total_seconds"] += r.ingestion_seconds
+        if r.prompt_tokens:
+            d["prompt_tokens"] += r.prompt_tokens
+        if r.completion_tokens:
+            d["completion_tokens"] += r.completion_tokens
 
     total_seconds = sum((r.ingestion_seconds or 0.0) for r in records)
+    total_prompt_tokens = sum((r.prompt_tokens or 0) for r in records)
+    total_completion_tokens = sum((r.completion_tokens or 0) for r in records)
     completed = sum(1 for r in records if r.status == "completed")
 
     return {
@@ -344,6 +363,8 @@ def _build_payload(
             "documents": len(records),
             "completed": completed,
             "total_seconds": round(total_seconds, 3),
+            "prompt_tokens": total_prompt_tokens,
+            "completion_tokens": total_completion_tokens,
             "by_domain": {
                 k: {**v, "total_seconds": round(v["total_seconds"], 3)}
                 for k, v in by_domain.items()

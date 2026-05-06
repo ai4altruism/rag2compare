@@ -21,6 +21,9 @@ async def test_init_db_creates_new_columns_on_fresh_db(tmp_path):
         cols_messages = await conn.run_sync(
             lambda c: {col["name"] for col in inspect(c).get_columns("messages")}
         )
+        cols_jobs = await conn.run_sync(
+            lambda c: {col["name"] for col in inspect(c).get_columns("ingestion_jobs")}
+        )
     await engine.dispose()
 
     assert "tags" in cols_documents
@@ -32,6 +35,8 @@ async def test_init_db_creates_new_columns_on_fresh_db(tmp_path):
         "thinking_tokens",
     ):
         assert col in cols_messages, f"missing {col} after init_db"
+    for col in ("prompt_tokens", "completion_tokens"):
+        assert col in cols_jobs, f"missing ingestion_jobs.{col} after init_db"
 
 
 @pytest.mark.asyncio
@@ -90,6 +95,21 @@ async def test_init_db_upgrades_legacy_schema_in_place(tmp_path):
             "  created_at DATETIME"
             ")"
         )
+        await conn.exec_driver_sql(
+            "CREATE TABLE ingestion_jobs ("
+            "  id VARCHAR(36) PRIMARY KEY,"
+            "  document_id VARCHAR(36),"
+            "  status VARCHAR(20),"
+            "  parser VARCHAR(50),"
+            "  chunk_size INTEGER,"
+            "  chunk_overlap INTEGER,"
+            "  contextual_enrichment BOOLEAN,"
+            "  error_message TEXT,"
+            "  started_at DATETIME,"
+            "  completed_at DATETIME,"
+            "  created_at DATETIME"
+            ")"
+        )
     await engine.dispose()
 
     # Now run init_db — it should add the new columns to existing tables.
@@ -103,12 +123,17 @@ async def test_init_db_upgrades_legacy_schema_in_place(tmp_path):
         cols_messages = await conn.run_sync(
             lambda c: {col["name"] for col in inspect(c).get_columns("messages")}
         )
+        cols_jobs = await conn.run_sync(
+            lambda c: {col["name"] for col in inspect(c).get_columns("ingestion_jobs")}
+        )
     await engine.dispose()
 
     assert "tags" in cols_documents
     assert "thinking_tokens" in cols_messages
     assert "prompt_tokens" in cols_messages
     assert "model_used" in cols_messages
+    assert "prompt_tokens" in cols_jobs
+    assert "completion_tokens" in cols_jobs
 
 
 # Suppress the unused import warning in CI; Base is needed for the side-effect

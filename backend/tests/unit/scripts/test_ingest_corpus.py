@@ -1,11 +1,14 @@
 """Unit tests for the batch-ingest CLI."""
 
+import argparse
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import yaml
 
 from scripts.ingest_corpus import (
+    IngestRecord,
+    _build_payload,
     already_ingested_filename,
     build_parser,
     main,
@@ -150,3 +153,68 @@ class TestParser:
         assert ns.base_url == "http://localhost:8000"
         assert ns.poll_interval == 2.0
         assert ns.dry_run is False
+
+
+def _record(domain: str, role: str, secs: float, p: int | None, c: int | None) -> IngestRecord:
+    return IngestRecord(
+        filename=f"{domain}-{role}.pdf",
+        domain=domain,
+        role=role,
+        document_id="x",
+        status="completed",
+        ingestion_seconds=secs,
+        chunk_count=10,
+        error_message=None,
+        file_size_bytes=1234,
+        prompt_tokens=p,
+        completion_tokens=c,
+    )
+
+
+class TestPayloadAggregation:
+    """Per-domain rollup includes the new prompt/completion token totals."""
+
+    def _corpus_stub(self, tmp_path: Path):
+        manifest = tmp_path / "corpus.yaml"
+        manifest.write_text(yaml.safe_dump({"ingest_order": [], "collections": []}))
+        return load_corpus(manifest)
+
+    def test_by_domain_sums_tokens_and_seconds(self, tmp_path: Path):
+        corpus = self._corpus_stub(tmp_path)
+        records = [
+            _record("ai-ethics-law", "Anchor", 12.0, 1000, 200),
+            _record("ai-ethics-law", "Conflict", 8.0, 500, 100),
+            _record("climate-science", "Anchor", 15.0, 2000, 400),
+        ]
+        args = argparse.Namespace(base_url="http://localhost:8000")
+
+        payload = _build_payload(corpus, records, "20260506T120000Z", args)
+
+        ai = payload["totals"]["by_domain"]["ai-ethics-law"]
+        assert ai["documents"] == 2
+        assert ai["completed"] == 2
+        assert ai["total_seconds"] == 20.0
+        assert ai["prompt_tokens"] == 1500
+        assert ai["completion_tokens"] == 300
+
+        cs = payload["totals"]["by_domain"]["climate-science"]
+        assert cs["prompt_tokens"] == 2000
+        assert cs["completion_tokens"] == 400
+
+        assert payload["totals"]["prompt_tokens"] == 3500
+        assert payload["totals"]["completion_tokens"] == 700
+
+    def test_missing_token_counts_treated_as_zero(self, tmp_path: Path):
+        corpus = self._corpus_stub(tmp_path)
+        records = [
+            _record("d", "Anchor", 5.0, None, None),
+            _record("d", "Bridge", 7.0, 100, 20),
+        ]
+        args = argparse.Namespace(base_url="http://localhost:8000")
+
+        payload = _build_payload(corpus, records, "ts", args)
+
+        d = payload["totals"]["by_domain"]["d"]
+        assert d["prompt_tokens"] == 100
+        assert d["completion_tokens"] == 20
+        assert payload["totals"]["prompt_tokens"] == 100

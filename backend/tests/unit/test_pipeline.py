@@ -319,6 +319,116 @@ class TestIngestionPipeline:
         assert doc.status == "complete"
 
     @patch("src.pipelines.ingestion.pipeline.create_parser")
+    async def test_pipeline_persists_enrichment_token_totals(
+        self,
+        mock_create_parser,
+        test_db: AsyncSession,
+        mock_qdrant_for_pipeline: AsyncMock,
+        mock_embedding: AsyncMock,
+        tmp_path: Path,
+    ):
+        """When enrichment runs, the IngestionJob row records summed Sonnet tokens."""
+        mock_parser = MagicMock()
+        mock_parser.parser_name = "docling"
+        mock_parser.parse.return_value = _make_parse_result()
+        mock_create_parser.return_value = mock_parser
+
+        # LLM mock that updates last_usage on every generate() call.
+        usages = iter([
+            {"prompt_tokens": 200, "completion_tokens": 60},
+            {"prompt_tokens": 250, "completion_tokens": 80},
+        ])
+        mock_llm = AsyncMock()
+        mock_llm.last_usage = {}
+
+        async def _generate(**_kwargs):
+            mock_llm.last_usage = next(usages)
+            return "summary"
+
+        mock_llm.generate.side_effect = _generate
+
+        settings_with_enrichment = Settings(
+            parser="docling",
+            chunk_size_tokens=512,
+            chunk_overlap_tokens=50,
+            embedding_provider="openai",
+            embedding_model="text-embedding-3-large",
+            embedding_dimensions=1024,
+            contextual_enrichment=True,
+        )
+
+        doc = Document(
+            collection_id="col-1", filename="test.pdf", status="pending", page_count=2
+        )
+        test_db.add(doc)
+        await test_db.commit()
+        await test_db.refresh(doc)
+
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 dummy")
+
+        pipeline = IngestionPipeline(
+            db=test_db,
+            qdrant=mock_qdrant_for_pipeline,
+            embedding_provider=mock_embedding,
+            settings=settings_with_enrichment,
+            llm_provider=mock_llm,
+        )
+        await pipeline.ingest(doc.id, pdf_file)
+
+        await test_db.refresh(doc)
+        assert doc.status == "complete"
+
+        result = await test_db.execute(
+            select(IngestionJob).where(IngestionJob.document_id == doc.id)
+        )
+        job = result.scalar_one()
+        assert job.contextual_enrichment is True
+        assert job.prompt_tokens == 450
+        assert job.completion_tokens == 140
+
+    @patch("src.pipelines.ingestion.pipeline.create_parser")
+    async def test_pipeline_skips_token_persistence_when_enrichment_off(
+        self,
+        mock_create_parser,
+        test_db: AsyncSession,
+        mock_qdrant_for_pipeline: AsyncMock,
+        mock_embedding: AsyncMock,
+        pipeline_settings: Settings,
+        tmp_path: Path,
+    ):
+        """No LLM provider means no enrichment, so token columns stay null."""
+        mock_parser = MagicMock()
+        mock_parser.parser_name = "docling"
+        mock_parser.parse.return_value = _make_parse_result()
+        mock_create_parser.return_value = mock_parser
+
+        doc = Document(
+            collection_id="col-1", filename="test.pdf", status="pending", page_count=2
+        )
+        test_db.add(doc)
+        await test_db.commit()
+        await test_db.refresh(doc)
+
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 dummy")
+
+        pipeline = IngestionPipeline(
+            db=test_db,
+            qdrant=mock_qdrant_for_pipeline,
+            embedding_provider=mock_embedding,
+            settings=pipeline_settings,
+        )
+        await pipeline.ingest(doc.id, pdf_file)
+
+        result = await test_db.execute(
+            select(IngestionJob).where(IngestionJob.document_id == doc.id)
+        )
+        job = result.scalar_one()
+        assert job.prompt_tokens is None
+        assert job.completion_tokens is None
+
+    @patch("src.pipelines.ingestion.pipeline.create_parser")
     async def test_pipeline_empty_document(
         self,
         mock_create_parser,
