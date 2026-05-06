@@ -174,3 +174,73 @@ class TestIngestionTimingExposure:
 
         assert response.ingestion_started_at is None
         assert response.ingestion_seconds is None
+
+
+class TestIngestionTokenExposure:
+    """Enrichment-token totals on the latest IngestionJob surface in DocumentResponse."""
+
+    async def test_tokens_surface_when_present(self, seeded_db):
+        from src.api.routes.documents import _build_document_response
+
+        _, session_factory, col_id = seeded_db
+        async with session_factory() as session:
+            doc = Document(collection_id=col_id, filename="paper.pdf", status="completed")
+            session.add(doc)
+            await session.flush()
+            job = IngestionJob(
+                document_id=doc.id,
+                parser="docling",
+                chunk_size=512,
+                chunk_overlap=50,
+                contextual_enrichment=True,
+                started_at=datetime(2026, 5, 4, 12, 0, 0),
+                completed_at=datetime(2026, 5, 4, 12, 0, 30),
+                status="complete",
+                prompt_tokens=12345,
+                completion_tokens=678,
+            )
+            session.add(job)
+            await session.flush()
+            await session.commit()
+            doc_id = doc.id
+
+        async with session_factory() as session:
+            stored = (await session.execute(
+                select(Document).where(Document.id == doc_id)
+            )).scalar_one()
+            response = await _build_document_response(session, stored)
+
+        assert response.ingestion_prompt_tokens == 12345
+        assert response.ingestion_completion_tokens == 678
+
+    async def test_tokens_none_when_enrichment_disabled(self, seeded_db):
+        from src.api.routes.documents import _build_document_response
+
+        _, session_factory, col_id = seeded_db
+        async with session_factory() as session:
+            doc = Document(collection_id=col_id, filename="paper.pdf", status="completed")
+            session.add(doc)
+            await session.flush()
+            job = IngestionJob(
+                document_id=doc.id,
+                parser="docling",
+                chunk_size=512,
+                chunk_overlap=50,
+                contextual_enrichment=False,
+                started_at=datetime(2026, 5, 4, 12, 0, 0),
+                completed_at=datetime(2026, 5, 4, 12, 0, 30),
+                status="complete",
+            )
+            session.add(job)
+            await session.flush()
+            await session.commit()
+            doc_id = doc.id
+
+        async with session_factory() as session:
+            stored = (await session.execute(
+                select(Document).where(Document.id == doc_id)
+            )).scalar_one()
+            response = await _build_document_response(session, stored)
+
+        assert response.ingestion_prompt_tokens is None
+        assert response.ingestion_completion_tokens is None

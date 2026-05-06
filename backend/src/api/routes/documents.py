@@ -48,6 +48,8 @@ async def _build_document_response(
             response.ingestion_seconds = (
                 job.completed_at - job.started_at
             ).total_seconds()
+        response.ingestion_prompt_tokens = job.prompt_tokens
+        response.ingestion_completion_tokens = job.completion_tokens
     return response
 
 

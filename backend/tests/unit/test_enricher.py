@@ -114,3 +114,76 @@ class TestContextualEnricher:
         prompt_text = messages[0]["content"]
         assert "My Document" in prompt_text
         assert "Ch1 > Sec1" in prompt_text
+
+
+class TestEnrichmentTokenAccumulation:
+    """Total_usage sums tokens read off llm.last_usage after each generate()."""
+
+    async def test_totals_start_at_zero(self):
+        mock = AsyncMock()
+        mock.generate.return_value = "summary"
+        mock.last_usage = {}
+        enricher = ContextualEnricher(mock)
+        assert enricher.total_usage == {"prompt_tokens": 0, "completion_tokens": 0}
+
+    async def test_accumulates_across_chunks(self):
+        mock = AsyncMock()
+        mock.generate.return_value = "summary"
+        # last_usage flips per call — enricher must read it eagerly each time
+        usages = iter([
+            {"prompt_tokens": 100, "completion_tokens": 30},
+            {"prompt_tokens": 120, "completion_tokens": 40},
+        ])
+
+        async def _generate(**_kwargs):
+            mock.last_usage = next(usages)
+            return "summary"
+
+        mock.generate.side_effect = _generate
+        enricher = ContextualEnricher(mock)
+
+        chunks = [
+            {"text": f"chunk {i}", "header_chain": [], "chunk_id": str(i)}
+            for i in range(2)
+        ]
+        await enricher.enrich_chunks(chunks)
+
+        assert enricher.total_usage == {"prompt_tokens": 220, "completion_tokens": 70}
+
+    async def test_cache_hits_do_not_double_count(self):
+        mock = AsyncMock()
+        mock.last_usage = {"prompt_tokens": 50, "completion_tokens": 10}
+        mock.generate.return_value = "summary"
+        enricher = ContextualEnricher(mock)
+
+        # Two chunks with identical text — second one is a cache hit.
+        chunks = [
+            {"text": "same", "header_chain": [], "chunk_id": "a"},
+            {"text": "same", "header_chain": [], "chunk_id": "b"},
+        ]
+        await enricher.enrich_chunks(chunks)
+
+        assert mock.generate.call_count == 1
+        assert enricher.total_usage == {"prompt_tokens": 50, "completion_tokens": 10}
+
+    async def test_failed_call_does_not_increment(self):
+        mock = AsyncMock()
+        mock.generate.side_effect = RuntimeError("boom")
+        mock.last_usage = {"prompt_tokens": 999, "completion_tokens": 999}
+        enricher = ContextualEnricher(mock)
+
+        chunks = [{"text": "x", "header_chain": [], "chunk_id": "a"}]
+        await enricher.enrich_chunks(chunks)
+
+        assert enricher.total_usage == {"prompt_tokens": 0, "completion_tokens": 0}
+
+    async def test_missing_usage_keys_treated_as_zero(self):
+        mock = AsyncMock()
+        mock.generate.return_value = "summary"
+        mock.last_usage = {"prompt_tokens": 75}  # no completion_tokens
+        enricher = ContextualEnricher(mock)
+
+        chunks = [{"text": "y", "header_chain": [], "chunk_id": "a"}]
+        await enricher.enrich_chunks(chunks)
+
+        assert enricher.total_usage == {"prompt_tokens": 75, "completion_tokens": 0}

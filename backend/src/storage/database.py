@@ -29,6 +29,8 @@ _LIGHTWEIGHT_UPGRADES: list[tuple[str, str, str]] = [
     ("messages", "prompt_tokens", "INTEGER"),
     ("messages", "completion_tokens", "INTEGER"),
     ("messages", "thinking_tokens", "INTEGER"),
+    ("ingestion_jobs", "prompt_tokens", "INTEGER"),
+    ("ingestion_jobs", "completion_tokens", "INTEGER"),
 ]
 
 
