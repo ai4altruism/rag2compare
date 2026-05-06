@@ -90,6 +90,19 @@ class ContextAssembler:
                 )
             )
 
+        # Parents may be missing from Qdrant (the ingestion pipeline currently
+        # only stores child chunks — see SDP §S3-05). Falling back to the
+        # original children when parent lookup yields nothing prevents
+        # parent-expansion mode from silently dropping all context.
+        if not parent_results:
+            logger.warning(
+                "context_expanded_parents_fallback",
+                original_count=len(results),
+                parent_ids_requested=len(parent_ids),
+                reason="no parent chunks found in store",
+            )
+            return results
+
         # Sort by score descending, parents first then non-parents
         parent_results.sort(key=lambda r: r.score, reverse=True)
         combined = parent_results + non_parent_results

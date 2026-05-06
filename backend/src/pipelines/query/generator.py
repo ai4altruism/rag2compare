@@ -74,19 +74,16 @@ class AnswerGenerator:
     def _llm_kwargs(self, *, stream: bool = False) -> dict:
         """Build per-call kwargs for the LLM, honoring adaptive-thinking rules.
 
-        Adaptive thinking on Opus 4.7 requires:
-        - `thinking={"type": "adaptive", "display": "summarized"}` block
-          (manual `{"type": "enabled", "budget_tokens": N}` is rejected
-          with 400 on Opus 4.7).
-        - Soft guidance via `output_config={"effort": <tier>}` at the top
-          level of the request, separate from the `thinking` block.
-        - `max_tokens` set generously — adaptive thinking can run long
-          and `max_tokens` is the hard cap on total output. We use 16K
-          which matches Anthropic's example for xhigh.
-        - Temperature=1.0 — historically required for manual thinking.
-          The adaptive-thinking docs don't disclaim it; passing 1.0 is
-          harmless (it's also Anthropic's default) and forces the
-          provider to honor the implicit constraint.
+        Opus 4.7 needs `thinking={"type":"adaptive","display":"summarized"}`
+        plus `output_config={"effort":<tier>}` in the request body. The
+        `display` field is load-bearing: when it defaults to `"omitted"`
+        (Opus 4.7's default), thinking does not engage on most queries
+        and `reasoning_tokens` returns 0. LiteLLM's `reasoning_effort`
+        shorthand omits `display`, so we set both fields explicitly.
+
+        `temperature` is intentionally not passed — Opus 4.7 rejects it
+        for adaptive-thinking models. The LiteLLM provider strips
+        `temperature` from any caller's kwargs as a safety net.
         """
         kwargs: dict = {}
         if is_thinking_enabled(self._reasoning_effort):
@@ -94,7 +91,6 @@ class AnswerGenerator:
             effort = effort_param(self._reasoning_effort)
             if effort is not None:
                 kwargs["output_config"] = effort
-            kwargs["temperature"] = 1.0
             kwargs["max_tokens"] = THINKING_MAX_TOKENS
         else:
             kwargs["temperature"] = self._temperature

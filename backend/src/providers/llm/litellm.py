@@ -17,6 +17,19 @@ BASE_RETRY_DELAY = 1.0
 litellm.suppress_debug_info = True
 
 
+def _strip_unsupported_kwargs(model: str, kwargs: dict) -> dict:
+    """Drop sampling kwargs that the target model rejects.
+
+    Anthropic deprecated `temperature` (and related sampling controls) on
+    Claude 4.x adaptive-thinking models — the API returns 400 with
+    `temperature is deprecated for this model`. Strip them rather than
+    asking every call site to know which model it's hitting.
+    """
+    if model.startswith(("claude-opus-4-", "claude-sonnet-4-", "anthropic/claude-opus-4-", "anthropic/claude-sonnet-4-")):
+        return {k: v for k, v in kwargs.items() if k not in {"temperature", "top_p", "top_k"}}
+    return kwargs
+
+
 def _extract_usage(usage_obj) -> dict:
     """Pull token counts out of a LiteLLM usage object into a plain dict.
 
@@ -53,6 +66,7 @@ class LiteLLMProvider(LLMProvider):
 
     async def generate(self, messages: list[dict], **kwargs) -> str:
         """Generate a complete response."""
+        kwargs = _strip_unsupported_kwargs(self._model, kwargs)
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 response = await litellm.acompletion(
@@ -91,6 +105,7 @@ class LiteLLMProvider(LLMProvider):
         `last_usage` for the caller to read after exhausting the stream.
         """
         self.last_usage = {}
+        kwargs = _strip_unsupported_kwargs(self._model, kwargs)
         response = await litellm.acompletion(
             model=self._model,
             messages=messages,
