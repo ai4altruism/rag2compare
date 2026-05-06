@@ -42,7 +42,8 @@ DEFAULT_BASE_URL = "http://localhost:8000"
 DEFAULT_MANIFEST = "experiments/corpus.yaml"
 DEFAULT_RESULTS_DIR = "experiments/results"
 
-TERMINAL_STATUSES = {"completed", "error"}
+TERMINAL_STATUSES = {"complete", "failed"}
+SUCCESS_STATUSES = {"complete", "completed"}
 
 
 @dataclass
@@ -95,19 +96,29 @@ def upload_document(
     pdf: Path,
     tags: dict,
 ) -> str:
-    """POST /documents/upload with one PDF + tags_json. Returns the new doc id."""
+    """POST /documents/upload with one PDF + tags_json. Returns the new doc id.
+
+    The backend reads `collection_id` as a query parameter (it's not
+    annotated with `Form()` in the route), so we pass it via params.
+    `tags_json` stays as a form field to match the route's `Form()` declaration.
+    """
     with pdf.open("rb") as fh:
         files = {"files": (pdf.name, fh, "application/pdf")}
-        data = {
-            "collection_id": collection_id,
-            "tags_json": json.dumps(tags),
-        }
-        resp = client.post("/api/documents/upload", files=files, data=data)
+        data = {"tags_json": json.dumps(tags)}
+        resp = client.post(
+            "/api/documents/upload",
+            files=files,
+            data=data,
+            params={"collection_id": collection_id},
+        )
     resp.raise_for_status()
     body = resp.json()
     if not body:
         raise RuntimeError(f"upload returned no documents for {pdf}")
     return body[0]["id"]
+
+
+_NOT_FOUND_GRACE_SECONDS = 30.0
 
 
 def poll_until_terminal(
@@ -116,10 +127,20 @@ def poll_until_terminal(
     interval: float,
     timeout: float,
 ) -> dict:
-    """Poll GET /documents/{id} until status is terminal or timeout fires."""
+    """Poll GET /documents/{id} until status is terminal or timeout fires.
+
+    A 404 immediately after upload is expected: FastAPI returns the 201
+    response before its dependency-injected DB session commits, so a fresh
+    GET can briefly miss the row. We tolerate 404s for `_NOT_FOUND_GRACE_SECONDS`
+    after the first poll, then surface them as real failures.
+    """
     deadline = time.monotonic() + timeout
+    not_found_deadline = time.monotonic() + _NOT_FOUND_GRACE_SECONDS
     while True:
         resp = client.get(f"/api/documents/{document_id}")
+        if resp.status_code == 404 and time.monotonic() < not_found_deadline:
+            time.sleep(interval)
+            continue
         resp.raise_for_status()
         doc = resp.json()
         if doc["status"] in TERMINAL_STATUSES:
@@ -157,7 +178,7 @@ def planned_documents(
 def already_ingested_filename(existing: list[dict], pdf_name: str) -> dict | None:
     """Find an existing Document row matching a PDF filename, if any."""
     for d in existing:
-        if d["filename"] == pdf_name and d["status"] == "completed":
+        if d["filename"] == pdf_name and d["status"] in SUCCESS_STATUSES:
             return d
     return None
 
@@ -241,7 +262,7 @@ def run(args: argparse.Namespace) -> int:
                             domain=doc.domain,
                             role=doc.role,
                             document_id=hit["id"],
-                            status="completed",
+                            status=hit.get("status") or "complete",
                             ingestion_seconds=hit.get("ingestion_seconds"),
                             chunk_count=hit.get("chunk_count"),
                             error_message=None,
@@ -340,7 +361,7 @@ def _build_payload(
             },
         )
         d["documents"] += 1
-        if r.status == "completed":
+        if r.status in SUCCESS_STATUSES:
             d["completed"] += 1
         if r.ingestion_seconds:
             d["total_seconds"] += r.ingestion_seconds
@@ -352,7 +373,7 @@ def _build_payload(
     total_seconds = sum((r.ingestion_seconds or 0.0) for r in records)
     total_prompt_tokens = sum((r.prompt_tokens or 0) for r in records)
     total_completion_tokens = sum((r.completion_tokens or 0) for r in records)
-    completed = sum(1 for r in records if r.status == "completed")
+    completed = sum(1 for r in records if r.status in SUCCESS_STATUSES)
 
     return {
         "started_at": started,
