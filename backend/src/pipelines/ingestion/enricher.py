@@ -42,6 +42,10 @@ class ContextualEnricher:
     def __init__(self, llm_provider: LLMProvider):
         self._llm = llm_provider
         self._cache: dict[str, str] = {}
+        self.total_usage: dict[str, int] = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+        }
 
     async def enrich_chunks(
         self,
@@ -105,6 +109,12 @@ class ContextualEnricher:
             summary = await self._llm.generate(
                 messages=[{"role": "user", "content": prompt}],
             )
+            usage = getattr(self._llm, "last_usage", None)
+            if isinstance(usage, dict):
+                for key in ("prompt_tokens", "completion_tokens"):
+                    val = usage.get(key)
+                    if val:
+                        self.total_usage[key] += int(val)
             return summary.strip()
         except Exception as e:
             logger.warning(
