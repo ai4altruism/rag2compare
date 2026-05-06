@@ -35,23 +35,21 @@ class BM25SparseEncoder:
         tf = Counter(tokens)
         dl = len(tokens)
 
-        indices = []
-        values = []
-
+        # Distinct tokens can hash to the same vocab index (feature
+        # hashing), so accumulate their BM25 scores per bucket; Qdrant
+        # rejects sparse vectors with duplicate indices.
+        bucket: dict[int, float] = {}
         for token, count in tf.items():
             idx = self._hash_token(token)
-            # BM25 term frequency saturation
             tf_score = (count * (self._k1 + 1)) / (
                 count + self._k1 * (1 - self._b + self._b * dl / self._avg_dl)
             )
-            indices.append(idx)
-            values.append(round(tf_score, 4))
+            bucket[idx] = bucket.get(idx, 0.0) + tf_score
 
-        # Sort by index for Qdrant
-        pairs = sorted(zip(indices, values, strict=True))
+        pairs = sorted(bucket.items())
         return SparseVector(
-            indices=[p[0] for p in pairs],
-            values=[p[1] for p in pairs],
+            indices=[idx for idx, _ in pairs],
+            values=[round(v, 4) for _, v in pairs],
         )
 
     def encode_batch(self, texts: list[str]) -> list[SparseVector]:

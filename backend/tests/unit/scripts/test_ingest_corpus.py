@@ -13,6 +13,7 @@ from scripts.ingest_corpus import (
     build_parser,
     main,
     planned_documents,
+    poll_until_terminal,
     upload_document,
 )
 from scripts._common import load_corpus
@@ -67,17 +68,32 @@ class TestPlannedDocuments:
 
 
 class TestAlreadyIngested:
-    def test_finds_completed_match(self):
+    def test_finds_pipeline_complete_status(self):
+        """Pipeline emits status='complete' for successful ingest."""
         existing = [
-            {"id": "1", "filename": "a.pdf", "status": "completed"},
-            {"id": "2", "filename": "b.pdf", "status": "error"},
+            {"id": "1", "filename": "a.pdf", "status": "complete"},
+            {"id": "2", "filename": "b.pdf", "status": "failed"},
         ]
         hit = already_ingested_filename(existing, "a.pdf")
         assert hit and hit["id"] == "1"
 
-    def test_skips_non_completed_match(self):
+    def test_finds_wiki_completed_status(self):
+        """Also accepts 'completed' for compatibility with the wiki-side schema."""
         existing = [
-            {"id": "1", "filename": "a.pdf", "status": "processing"},
+            {"id": "1", "filename": "a.pdf", "status": "completed"},
+        ]
+        hit = already_ingested_filename(existing, "a.pdf")
+        assert hit and hit["id"] == "1"
+
+    def test_skips_non_terminal_match(self):
+        existing = [
+            {"id": "1", "filename": "a.pdf", "status": "parsing"},
+        ]
+        assert already_ingested_filename(existing, "a.pdf") is None
+
+    def test_skips_failed_match(self):
+        existing = [
+            {"id": "1", "filename": "a.pdf", "status": "failed"},
         ]
         assert already_ingested_filename(existing, "a.pdf") is None
 
@@ -99,10 +115,11 @@ class TestUploadDocumentPayload:
             def json(self):
                 return [{"id": "abc-123"}]
 
-        def fake_post(url, files=None, data=None):
+        def fake_post(url, files=None, data=None, params=None):
             captured["url"] = url
             captured["files_keys"] = list((files or {}).keys())
             captured["data"] = data
+            captured["params"] = params
             return _FakeResponse()
 
         client = MagicMock()
@@ -118,13 +135,16 @@ class TestUploadDocumentPayload:
         assert doc_id == "abc-123"
         assert captured["url"] == "/api/documents/upload"
         assert captured["files_keys"] == ["files"]
-        assert captured["data"]["collection_id"] == "col-1"
-        # tags get JSON-encoded into the form value
+        # collection_id rides as a query param to match the route's signature
+        # (FastAPI treats unannotated str params as query, not form).
+        assert captured["params"] == {"collection_id": "col-1"}
+        # tags_json stays as form data (route declares it as Form(None)).
         import json as _json
         assert _json.loads(captured["data"]["tags_json"]) == {
             "role": "Anchor",
             "year": 2026,
         }
+        assert "collection_id" not in captured["data"]
 
 
 class TestDryRun:
@@ -161,7 +181,7 @@ def _record(domain: str, role: str, secs: float, p: int | None, c: int | None) -
         domain=domain,
         role=role,
         document_id="x",
-        status="completed",
+        status="complete",
         ingestion_seconds=secs,
         chunk_count=10,
         error_message=None,
@@ -169,6 +189,84 @@ def _record(domain: str, role: str, secs: float, p: int | None, c: int | None) -
         prompt_tokens=p,
         completion_tokens=c,
     )
+
+
+class TestPollUntilTerminal:
+    """A 404 immediately after upload must be tolerated, not surfaced as failure.
+
+    FastAPI commits the upload's DB session AFTER sending the 201, so a
+    sub-second poll can race the commit and see no row yet.
+    """
+
+    def _make_response(self, status_code: int, payload: dict | None = None):
+        resp = MagicMock()
+        resp.status_code = status_code
+
+        def _raise_for_status():
+            if status_code >= 400:
+                from httpx import HTTPStatusError, Request, Response
+
+                req = Request("GET", "http://x/")
+                raise HTTPStatusError("err", request=req, response=Response(status_code))
+
+        resp.raise_for_status.side_effect = _raise_for_status
+        resp.json.return_value = payload or {}
+        return resp
+
+    def test_initial_404_then_complete_succeeds(self):
+        from scripts import ingest_corpus as mod
+
+        client = MagicMock()
+        client.get.side_effect = [
+            self._make_response(404),
+            self._make_response(200, {"status": "complete", "id": "x"}),
+        ]
+        with patch.object(mod.time, "sleep"):
+            doc = poll_until_terminal(client, "x", interval=0.1, timeout=10.0)
+        assert doc["status"] == "complete"
+        assert client.get.call_count == 2
+
+    def test_persistent_404_past_grace_window_raises(self):
+        from scripts import ingest_corpus as mod
+
+        client = MagicMock()
+        client.get.return_value = self._make_response(404)
+
+        # Fake monotonic clock so we cross the 30s grace window after one tick.
+        ticks = iter([0.0, 0.0, 100.0])  # start, deadline calc, second poll
+        with patch.object(mod.time, "monotonic", side_effect=lambda: next(ticks)):
+            with patch.object(mod.time, "sleep"):
+                import pytest as _pytest
+                from httpx import HTTPStatusError
+
+                with _pytest.raises(HTTPStatusError):
+                    poll_until_terminal(client, "x", interval=0.1, timeout=10.0)
+
+    def test_non_terminal_status_continues_polling(self):
+        from scripts import ingest_corpus as mod
+
+        client = MagicMock()
+        client.get.side_effect = [
+            self._make_response(200, {"status": "parsing"}),
+            self._make_response(200, {"status": "embedding"}),
+            self._make_response(200, {"status": "complete"}),
+        ]
+        with patch.object(mod.time, "sleep"):
+            doc = poll_until_terminal(client, "x", interval=0.1, timeout=10.0)
+        assert doc["status"] == "complete"
+        assert client.get.call_count == 3
+
+    def test_failed_is_terminal(self):
+        from scripts import ingest_corpus as mod
+
+        client = MagicMock()
+        client.get.side_effect = [
+            self._make_response(200, {"status": "parsing"}),
+            self._make_response(200, {"status": "failed", "error_message": "boom"}),
+        ]
+        with patch.object(mod.time, "sleep"):
+            doc = poll_until_terminal(client, "x", interval=0.1, timeout=10.0)
+        assert doc["status"] == "failed"
 
 
 class TestPayloadAggregation:
