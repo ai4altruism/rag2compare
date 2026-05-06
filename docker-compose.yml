@@ -15,6 +15,9 @@ services:
       # Override the installed `scripts` package with the live source tree so
       # CLI tweaks pick up on container restart instead of needing an image rebuild.
       - ./backend/scripts:/usr/local/lib/python3.12/site-packages/scripts
+      # Same trick for the FastAPI source — uvicorn imports `src.main` from
+      # /app first, so this overrides the build-time copy.
+      - ./backend/src:/app/src
     depends_on:
       - qdrant
     healthcheck:

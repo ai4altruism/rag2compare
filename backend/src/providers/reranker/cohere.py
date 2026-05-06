@@ -31,7 +31,6 @@ class CohereRerankerProvider(RerankerProvider):
             query=query,
             documents=documents,
             top_n=top_k,
-            return_documents=True,
         )
 
         results = []
