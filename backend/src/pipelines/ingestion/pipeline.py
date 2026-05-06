@@ -164,6 +164,11 @@ class IngestionPipeline:
                 for child, enriched_dict in zip(child_chunks, enriched, strict=True):
                     child.text = enriched_dict["text"]
 
+                job.prompt_tokens = enricher.total_usage.get("prompt_tokens") or None
+                job.completion_tokens = (
+                    enricher.total_usage.get("completion_tokens") or None
+                )
+
             doc.status = "embedding"
             await self._db.commit()
 
