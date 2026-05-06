@@ -129,15 +129,30 @@ def poll_until_terminal(
 ) -> dict:
     """Poll GET /documents/{id} until status is terminal or timeout fires.
 
-    A 404 immediately after upload is expected: FastAPI returns the 201
-    response before its dependency-injected DB session commits, so a fresh
-    GET can briefly miss the row. We tolerate 404s for `_NOT_FOUND_GRACE_SECONDS`
-    after the first poll, then surface them as real failures.
+    Tolerates two kinds of transient errors:
+
+    - 404 immediately after upload: FastAPI returns the 201 before its
+      dependency-injected DB session commits, so a fresh GET can briefly
+      miss the row. We tolerate 404s for `_NOT_FOUND_GRACE_SECONDS`.
+    - httpx connect/read timeouts: the backend's synchronous Docling
+      parser blocks the FastAPI event loop for 45-120s on larger papers,
+      and a status GET issued during that window queues until the parse
+      releases the loop. Treating these as transient keeps the CLI alive
+      across the parse stall instead of falsely declaring the doc stuck.
     """
     deadline = time.monotonic() + timeout
     not_found_deadline = time.monotonic() + _NOT_FOUND_GRACE_SECONDS
     while True:
-        resp = client.get(f"/api/documents/{document_id}")
+        try:
+            resp = client.get(f"/api/documents/{document_id}")
+        except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError) as e:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"document {document_id} did not reach a terminal status within {timeout}s"
+                    f" (last error: {type(e).__name__})"
+                ) from e
+            time.sleep(interval)
+            continue
         if resp.status_code == 404 and time.monotonic() < not_found_deadline:
             time.sleep(interval)
             continue

@@ -163,9 +163,16 @@ def write_json(out_path: Path, payload: dict) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def make_client(base_url: str, timeout: float = 60.0) -> httpx.Client:
+def make_client(base_url: str, timeout: float = 120.0) -> httpx.Client:
     """Synchronous httpx client. The CLIs are linear and benefit from simple
-    blocking semantics; the backend itself is the async one."""
+    blocking semantics; the backend itself is the async one.
+
+    Default timeout is generous because the backend's ingestion pipeline
+    runs synchronous Docling parsing inline with the FastAPI event loop —
+    while a parse is in flight (45-120s on larger papers) all routes,
+    including status GETs, queue behind it. Callers can override if they
+    have stronger SLAs.
+    """
     return httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout)
 
 
