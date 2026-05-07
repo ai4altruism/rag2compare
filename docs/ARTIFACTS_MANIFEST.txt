@@ -1,0 +1,33 @@
+# Run-Artifact Manifest — RAG vs LLM Wiki Experiment
+
+# Generated: 2026-05-06T23:01:06Z UTC
+# Repo tag: osf-prereg-2026-05-06 (commit 655ef12)
+
+# Five artifacts, in pipeline order. Upload all five to the OSF project's
+# Files section. Filenames must be preserved (downstream tooling pairs by id and
+# locates artifacts by path).
+
+## ingest-20260506T202904Z.json
+  description: RAG-side ingest artifact: per-paper timing + chunk + token telemetry across 24 papers
+  size:        10,829 bytes
+  sha256:      4a5ff508dc449ecb934a40e643ed524d125e383ef10000564dfbf9b84db73c28
+
+## run-20260506T221602Z.json
+  description: RAG-side run artifact: 13 questions, 5 reranked sources each, full per-question token telemetry
+  size:        261,901 bytes
+  sha256:      eb295306f91e39b764a02d64c8b745591087aec9d5f5d727ef132ba28b98537d
+
+## wiki-ingest-20260506T211731Z.json
+  description: Wiki-side ingest artifact: per-paper compilation telemetry across 24 papers
+  size:        6,750 bytes
+  sha256:      da22f3aded2b747ae360f9eda91d8a64bacd43406f7bdfc3fee144ff73b86657
+
+## wiki-run-20260506T205500Z.json
+  description: Wiki-side run artifact: 13 questions answered against the compiled wiki
+  size:        189,748 bytes
+  sha256:      6c1da6be7f7d5655b24152b3636be81b2835a94a35f593572f86211c4294ce8b
+
+## judged-20260506T225645Z.json
+  description: Judge artifact: GPT-5.4 primary + Gemini 2.5 Pro secondary IRR (full 13-question coverage), with per-question scores + aggregate means + IRR max-deltas
+  size:        62,149 bytes
+  sha256:      b74f44a75252ec3696e07ac47bcb6edc93ba90187fe9db70763694766deab163
