@@ -32,6 +32,13 @@ experiments/papers/**
 experiments/results/**
 !experiments/results/.gitkeep
 
+# Paper manuscript, findings writeup, internal docs, and OSF registration —
+# kept in a separate private repo. Do not re-add to this public repo.
+paper/
+findings-2026-05-06.md
+docs/
+OSF Registration - LLM Wiki versus RAG.pdf
+
 # IDE
 .vscode/
 .idea/
