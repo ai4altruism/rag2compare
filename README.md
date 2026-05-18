@@ -54,7 +54,7 @@ See [`experiments/README.md`](experiments/README.md) for the step-by-step proced
 └─────────────┘   └─────────────────┘
 ```
 
-All LLM, embedding, and reranking providers are swappable via configuration. Default providers: Anthropic **Claude Opus 4.7** with `xhigh` extended thinking (answer generation), Anthropic **Claude Sonnet 4.5** (per-chunk contextual enrichment during ingestion — cheaper model since summarization isn't reasoning-heavy), OpenAI `text-embedding-3-large` (embeddings), Cohere Rerank 3.5 (reranking). The experiment harness defaults to OpenAI **GPT-5** as the judge LLM (cross-family choice avoids same-family self-preference bias when scoring Claude outputs).
+All LLM, embedding, and reranking providers are swappable via configuration. Default providers: Anthropic **Claude Opus 4.7** with `xhigh` extended thinking (answer generation), Anthropic **Claude Sonnet 4.5** (per-chunk contextual enrichment during ingestion — cheaper model since summarization isn't reasoning-heavy), OpenAI `text-embedding-3-large` (embeddings), Cohere Rerank 3.5 (reranking). The experiment harness uses a two-judge design for scoring: **OpenAI GPT-5.4** as the primary adjudicative judge and **Google Gemini 2.5 Pro** as the secondary inter-rater-reliability (IRR) judge. Both are cross-family from the Claude answer model to mitigate same-family self-preference bias; the secondary judge re-scores a subset of questions so calibration drift can be checked per-criterion (see `--secondary-judge` in [`experiments/README.md`](experiments/README.md)).
 
 ## Tech Stack
 
@@ -73,7 +73,8 @@ All LLM, embedding, and reranking providers are swappable via configuration. Def
 | LLM routing | LiteLLM | >=1.55 |
 | Default answer model | Anthropic Claude Opus 4.7 (`xhigh` extended thinking, 32K thinking budget) | — |
 | Default enrichment model | Anthropic Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`) | — |
-| Default judge model (experiment harness) | OpenAI GPT-5 with `medium` reasoning effort | — |
+| Primary judge (experiment harness) | OpenAI GPT-5.4 with `medium` reasoning effort | — |
+| Secondary IRR judge (experiment harness) | Google Gemini 2.5 Pro | — |
 | Embeddings | OpenAI / Cohere / Sentence-Transformers / Ollama | — |
 | Reranking | Cohere Rerank 3.5 / cross-encoder (local) | — |
 | Package manager (backend) | uv | — |
@@ -278,15 +279,21 @@ uv run rag2compare-judge \
 
 ## Project Status
 
-Sprints 1–7 complete: full backend pipeline, Next.js frontend, Opus 4.7 extended-thinking integration, document tagging, token telemetry, and the three experiment CLIs (ingest, run, judge). Sprint 8 — additional RAG quality evaluation (RAGAS / DeepEval), expanded test coverage, vision-parser fallback, performance benchmarking, and Docker Compose production hardening — is the remaining work.
+- **RAG system (backend + frontend):** built and committed. Full ingestion + query pipeline, Opus 4.7 extended-thinking integration, document tagging, token telemetry, and the three experiment CLIs (`rag2compare-ingest`, `rag2compare-run`, `rag2compare-judge`) all in place.
+- **RAG-side experiment artifacts:** `ingest-*.json` and `run-*.json` for the 24-paper / 13-question protocol are produced by the CLIs above; see [`experiments/results/`](experiments/) once you run the harness.
+- **Wiki-side artifacts:** executed and committed in the companion repo [`ai4altruism/wikikb`](https://github.com/ai4altruism/wikikb) at `experiments/results/wiki-run-20260506T205500Z.json` and `wiki-ingest-20260506T211731Z.json`.
+- **Cross-family judging:** **PENDING** — runs from this repo against both sides' artifacts via `rag2compare-judge`.
+- **H1 / H2 / H3 verdicts:** **PENDING** — depend on judge output.
+
+Open follow-up work tracked separately: additional RAG quality evaluation (RAGAS / DeepEval), expanded test coverage, vision-parser fallback, performance benchmarking, and Docker Compose production hardening.
 
 ## License
 
-GNU General Public License v3.0. Copyright (c) 2025 AI for Altruism Inc.
+GNU General Public License v3.0. Copyright (c) 2026 AI for Altruism Inc. See [`LICENSE`](LICENSE) for the full text.
 
 ```
 Rag2Compare
-Copyright (c) 2025 AI for Altruism Inc
+Copyright (c) 2026 AI for Altruism Inc
 License: GNU GPL v3.0
 ```
 

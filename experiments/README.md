@@ -182,7 +182,7 @@ What it does:
 5. Computes per-system, per-criterion, and per-tier means.
 6. Writes `experiments/results/judged-<timestamp>.json`.
 
-**Default judge: `gpt-5` (cross-family).** Using Claude to judge Claude
+**Default judge: `gpt-5.4` (cross-family).** Using Claude to judge Claude
 has documented self-preference bias, so the judge defaults to OpenAI's
 flagship. Override with `--judge-model` if you need something else.
 
@@ -197,7 +197,7 @@ Useful flags:
 
 | Flag                          | Purpose                                                                              |
 | ----------------------------- | ------------------------------------------------------------------------------------ |
-| `--judge-model`               | Primary judge (default `gpt-5`)                                                      |
+| `--judge-model`               | Primary judge (default `gpt-5.4`)                                                    |
 | `--reasoning-effort`          | `low` / `medium` / `high` (default `medium` — judging is less reasoning-heavy)       |
 | `--secondary-judge MODEL`     | Run a second judge for inter-rater reliability                                       |
 | `--secondary-judge-questions` | Comma-separated question ids the secondary judge should re-score                     |
@@ -230,7 +230,7 @@ where the max delta exceeds 2.
   "rag_run": ".../run-<rag-ts>.json",
   "wiki_run": ".../wiki-run.json",
   "rubric": ".../rubric.yaml",
-  "judge_model": "gpt-5",
+  "judge_model": "gpt-5.4",
   "reasoning_effort": "medium",
   "seed": 42,
   "criteria": ["groundedness", "structural_integrity", "conflict_awareness", "inter_paper_mapping"],

@@ -6,7 +6,7 @@ LLM along with the rubric, parses the structured score response, and
 writes a `judged-<timestamp>.json` artifact with per-question scores
 plus aggregated means by system, criterion, and tier.
 
-Cross-family judging is the default (`gpt-5`) to avoid same-family
+Cross-family judging is the default (`gpt-5.4`) to avoid same-family
 self-preference bias when scoring Claude outputs. An optional
 `--secondary-judge` runs a second model on a subset for inter-rater
 reliability.
@@ -16,7 +16,7 @@ Usage:
         --rag-run experiments/results/run-20260504T210000Z.json \\
         --wiki-run path/to/wiki-run.json \\
         --rubric experiments/rubric.yaml \\
-        [--judge-model gpt-5] [--reasoning-effort medium] \\
+        [--judge-model gpt-5.4] [--reasoning-effort medium] \\
         [--secondary-judge gemini-2.5-pro --secondary-judge-questions Q1,Q2,Q3] \\
         [--seed 42] [--dry-run] [--max-questions N] [--resume PATH]
 """
@@ -36,7 +36,7 @@ import yaml
 
 from scripts._common import err, info, utc_timestamp, write_json
 
-DEFAULT_JUDGE_MODEL = "gpt-5"
+DEFAULT_JUDGE_MODEL = "gpt-5.4"
 DEFAULT_REASONING_EFFORT = "medium"  # Judging is less reasoning-heavy than synthesis.
 DEFAULT_RESULTS_DIR = "experiments/results"
 
