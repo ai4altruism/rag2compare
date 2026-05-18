@@ -18,7 +18,7 @@ The hypotheses we're testing:
 - **H2 (Fact retrieval):** Vector RAG matches or beats the LLM Wiki on point-source factual lookups (specific stats, exact ranges), because RAG retrieves raw chunks without lossy summarization.
 - **H3 (Efficiency):** the LLM Wiki pays a high upfront cost at *ingest* time and a low per-*query* cost; Vector RAG inverts that. The crossover point depends on corpus size and query volume.
 
-See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for the step-by-step procedure to actually run the experiment, and [`experiments/README.md`](experiments/README.md) for the CLI reference and JSON artifact schemas.
+See [`experiments/README.md`](experiments/README.md) for the step-by-step procedure, CLI reference, and JSON artifact schemas. The LLM-Wiki side and the 24-paper corpus procurement guide live in the companion repo [`ai4altruism/wikikb`](https://github.com/ai4altruism/wikikb) — you need both repos to reproduce the comparison.
 
 ## Architecture
 
@@ -103,10 +103,6 @@ rag2compare/
 │   │   ├── providers/  TanStack Query provider
 │   │   └── stores/     Zustand stores
 │   └── package.json
-├── docs/
-│   ├── SRS.md          System Requirements Specification
-│   ├── SDP.md          Software Development Plan (sprint breakdown)
-│   └── RUNBOOK.md      Step-by-step procedure for executing the experiment
 ├── experiments/
 │   ├── corpus.yaml     24-paper manifest (collections, role tags, file paths)
 │   ├── questions.yaml  13 evaluation questions (5 tiers + 3 RAG-favoring)
@@ -250,7 +246,9 @@ For the RAG vs LLM Wiki comparison, the workflow is:
 
 ```bash
 # 0. Pre-flight: drop the 24 PDFs into experiments/papers/<domain>/
-#    matching the filenames in experiments/corpus.yaml
+#    matching the filenames in experiments/corpus.yaml. The procurement
+#    guide (DOIs, arXiv IDs, download URLs per paper) is in the companion
+#    repo at github.com/ai4altruism/wikikb/blob/main/CORPUS.md.
 docker compose --profile full up -d
 curl -s http://localhost:8000/api/health | jq
 
@@ -271,18 +269,16 @@ uv run rag2compare-judge \
   --rubric   ../experiments/rubric.yaml
 ```
 
-[`docs/RUNBOOK.md`](docs/RUNBOOK.md) walks through every step including troubleshooting, inter-rater reliability spot-checks, and how each hypothesis maps to a check on the resulting JSON artifacts.
+[`experiments/README.md`](experiments/README.md) walks through every step including the inter-rater reliability spot-check and how each hypothesis maps to a check on the resulting JSON artifacts. The 24-paper corpus and the procurement guide (DOIs, arXiv IDs, download links) live in the companion repo — see [`CORPUS.md`](https://github.com/ai4altruism/wikikb/blob/main/CORPUS.md) in [`ai4altruism/wikikb`](https://github.com/ai4altruism/wikikb).
 
 ## Further Reading
 
-- [docs/RUNBOOK.md](docs/RUNBOOK.md) — Step-by-step procedure for executing the RAG vs LLM Wiki experiment end-to-end
-- [docs/SRS.md](docs/SRS.md) — Detailed functional and non-functional requirements, data model, API specification, and experiment-harness requirements (§4.5, §9.3)
-- [docs/SDP.md](docs/SDP.md) — Sprint plan, git workflow, definition of done, and risk register
-- [experiments/README.md](experiments/README.md) — CLI reference, corpus / questions / rubric format, and JSON artifact schemas
+- [experiments/README.md](experiments/README.md) — Step-by-step procedure, CLI reference, and JSON artifact schemas for the experiment
+- [ai4altruism/wikikb](https://github.com/ai4altruism/wikikb) — Companion repo: the LLM-Wiki side of the experiment and the 24-paper corpus procurement guide (`CORPUS.md`)
 
 ## Project Status
 
-Sprints 1–7 complete. Sprint 7 expanded beyond its original frontend-only v1.0 scope to include the experiment-readiness work (Opus 4.7 + extended thinking, document tags, token telemetry, batch ingest CLI, experiment runner CLI, judge LLM CLI). Sprint 8 — RAG quality evaluation (RAGAS / DeepEval), frontend test setup, E2E tests, vision parser, performance benchmarking, Docker Compose production hardening — is the remaining work. See [docs/SDP.md](docs/SDP.md) for the full breakdown.
+Sprints 1–7 complete: full backend pipeline, Next.js frontend, Opus 4.7 extended-thinking integration, document tagging, token telemetry, and the three experiment CLIs (ingest, run, judge). Sprint 8 — additional RAG quality evaluation (RAGAS / DeepEval), expanded test coverage, vision-parser fallback, performance benchmarking, and Docker Compose production hardening — is the remaining work.
 
 ## License
 
