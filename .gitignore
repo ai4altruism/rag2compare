@@ -36,6 +36,7 @@ experiments/results/**
 # kept in a separate private repo. Do not re-add to this public repo.
 paper/
 findings-2026-05-06.md
+wiki-side-writeup-2026-05-06.md
 docs/
 OSF Registration - LLM Wiki versus RAG.pdf
 
