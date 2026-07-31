@@ -84,26 +84,25 @@ Status as of 2026-07-31:
 
 | Outcome | Count | Notes |
 |---|---:|---|
-| Auto-fetchable | 14 | arXiv, or an open-access copy registered with Unpaywall |
-| Manual retrieval | 6 | DOI confirmed, no OA copy; needs institutional access. Mostly SSRN and IEEE |
-| DOI unconfirmed | 4 | flagged `UNVERIFIED`; see below |
+| Auto-fetchable | 17 | arXiv, or an open-access copy registered with Unpaywall |
+| Manual retrieval | 7 | DOI confirmed, no OA copy; needs institutional access. Mostly SSRN and IEEE |
+| DOI unconfirmed | 0 | — |
 
-Of the 24 rows, 19 are `ok`, 1 is `CHECK`, and 4 are `UNVERIFIED`.
+**All 24 rows are `ok` as of 2026-07-31.** Six were settled by hand and recorded in
+`corpus_doi_overrides.tsv` with their confirming evidence.
 
-The four unconfirmed rows are marked `UNVERIFIED` in the manifest rather than
-guessed at. `corpus.yaml` records abbreviated titles, and for these four no
-candidate cleared both the title-similarity threshold and the author/year
-corroboration:
+Six rows could not be settled automatically and were confirmed by hand against
+Crossref and arXiv metadata, checking first author and year in each case. All
+are recorded in `corpus_doi_overrides.tsv` with the evidence:
 
-- *lit-tag — A Shiny App for Adding Custom Tags and Notes to a Citation Database* (McElhany et al., 2026) — no Crossref or arXiv result at all
-- *Biological Response of Eelgrass Epifauna to Elevated Ocean Alkalinity* (Jones et al., 2025)
-- *Air-Sea Gas Exchange in Response to OAE in a Temperate Plankton Community* (Schneider et al., 2025)
-- *Considerations for the Integration of RCTs and Real-World Data* (Qiu et al., 2026)
-
-One further row carries `CHECK`, meaning a strong title match whose author list
-disagrees: *Monitoring, Reporting, and Verification for Ocean Alkalinity
-Enhancement* (Ho et al., 2023). The matched title is exact and the DOI is
-almost certainly right; it wants one human glance to confirm.
+| Paper | DOI | Why automation missed it |
+|---|---|---|
+| Ho et al., 2023, MRV for OAE | `10.5194/sp-2-oae2023-12-2023` | Title matched exactly; the author check failed on a parsing artifact |
+| Jones et al., 2025, eelgrass epifauna | `10.5194/bg-22-1615-2025` | The corpus records a short form of a published title that names two study species |
+| Schneider et al., 2025, air-sea gas exchange | `10.5194/egusphere-2025-524` | Published title is much longer than the corpus's short form. **This is the EGUsphere preprint**; swap if a final journal version was the one ingested |
+| Qiu et al., 2026, RCTs and real-world data | `10.48550/arXiv.2604.10308` | Not indexed by Crossref; the automated pass surfaced unrelated economics trial registrations |
+| McElhany et al., 2026, lit-tag | `10.48550/arXiv.2603.19238` | Published as "lit-tag: An app for..." against the corpus's "lit-tag — A Shiny App for...". Distinct from `10.70212/cdrxiv.2026519.v1`, a related database paper on which McElhany is third author |
+| Choquette-Choo et al., 2021, label-only MIA | `10.48550/arXiv.2007.14321` | Automation matched a different paper sharing the title prefix; the author check caught it |
 
 > Why the manifest refuses to guess: a wrong DOI is worse than an absent one,
 > because it sends a replicator confidently to the wrong paper. The resolver

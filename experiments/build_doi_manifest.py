@@ -106,10 +106,19 @@ def query_crossref(title: str, author: str, rows: int = 5) -> list[dict]:
 
 
 def split_variants(title: str) -> list[str]:
-    """Query variants: the full title, and the part before a dash subtitle."""
+    """Query variants: the full title, and the part before a dash subtitle.
+
+    The length guard used to require a head longer than 12 characters, which
+    silently skipped short-but-distinctive names: "lit-tag — A Shiny App for
+    Adding Custom Tags..." has a 7-character head, so the fallback never fired
+    and the paper went unresolved even though "lit-tag" alone finds it
+    immediately. A short head is only useless when it is also generic, so the
+    guard now rejects common words rather than short ones.
+    """
     out = [title]
-    head = re.split(r"\s+[—–-]\s+", title, maxsplit=1)[0]
-    if head and head != title and len(head) > 12:
+    head = re.split(r"\s+[—–:-]\s+", title, maxsplit=1)[0].strip()
+    generic = {"a", "an", "the", "on", "in", "of", "study", "report", "notes"}
+    if head and head != title and head.lower() not in generic and len(head) > 3:
         out.append(head)
     return out
 

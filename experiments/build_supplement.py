@@ -67,7 +67,13 @@ FORBIDDEN = {
     "author given name": r"\bTheodore\b",
     "home directory": r"/(?:home|Users)/(?!path/to)[A-Za-z0-9._-]+",
     "org name": r"ai4altruism|AI for Altruism|\bA4A\b",
-    "public OSF id": r"10\.17605|osf\.io/zemhp|ZEMHP",
+    "public OSF DOI": r"10\.17605|ZEMHP",
+    # An OSF link is a leak only when it lacks a view_only token: the bare node
+    # resolves to a contributor list naming the author, the same link with a
+    # token does not. Matching on the node id alone both false-positives on
+    # legitimate anonymized links and false-negatives on any node id not
+    # spelled out in this pattern.
+    "OSF link without view_only": r"https?://osf\.io/(?![^\s)]*view_only=)[^\s)]+",
     "public arXiv id": r"2605\.18490",
     "github user": r"tedcochran",
     "private wiki repo": r"\boffload\b",
