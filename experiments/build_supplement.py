@@ -3,23 +3,30 @@
 The submission PDF is anonymized by the TMLR stylefile plus an explicit
 pdfauthor override. **The supplement is not covered by any of that**, and it is
 uploaded to the same reviewers. A supplement built by zipping the repository
-de-anonymizes the submission three separate ways:
+de-anonymizes the submission two ways:
 
-  1. deposited artifacts embed absolute paths from the run machine, carrying
-     the author's username (`/home/theo/...`);
-  2. scripts carry a contact email;
-  3. MATERIALS.md cites the public OSF DOI and the arXiv id, both of which
+  1. scripts carry a contact email;
+  2. MATERIALS.md cites the public OSF DOI and the arXiv id, both of which
      resolve to the named author.
 
 So this script stages the package, rewrites those, and then **verifies the
 staged tree and refuses to write the archive if anything identifying remains**.
 A scan that cannot fail is not a check.
 
+**The run artifacts are copied verbatim and hash-checked**, not rewritten. They
+embed absolute paths from the run machine carrying a first name, which is not a
+unique identifier (author decision, 2026-07-31). Rewriting them would change
+their SHA-256s, so a reviewer checking the supplement against
+ARTIFACTS_MANIFEST.txt would see mismatches on files that are actually correct.
+Shipping them unmodified means the supplement's copies *are* the deposited
+copies, and verification succeeds against either.
+
 Run:
     python experiments/build_supplement.py --out supplement.zip
     python experiments/build_supplement.py --out supplement.zip --with-artifacts
 """
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -45,13 +52,15 @@ PACKAGE = [
 # shipping the scrubber would leak exactly what it exists to remove. The scan
 # below catches that if anyone adds it back.
 
-# Substitutions applied to every staged text file, in order.
+# Substitutions applied to staged text files, in order. NOT applied to the run
+# artifacts: those ship byte-identical to the deposit so their SHA-256s still
+# verify against ARTIFACTS_MANIFEST.txt. Rewriting them would make a reviewer's
+# hash check fail on files that are actually correct.
 REWRITES = [
     # Collapse "https://osf.io/zemhp (DOI: 10.17605/OSF.IO/ZEMHP)" to one link
     # before the individual rules fire, or the substitution reads as
     # "[link] (DOI: [link])".
     (r"https?://osf\.io/zemhp\S*\s*\(DOI:\s*10\.17605/OSF\.IO/ZEMHP\)", "ANON_OSF_LINK"),
-    (r"/(?:home|Users)/[A-Za-z0-9._-]+/", "/path/to/"),
     (r"[A-Za-z0-9._%+-]+@ai4altruism\.org", "anonymous@example.org"),
     (r"https?://(?:doi\.org/)?10\.17605/OSF\.IO/ZEMHP", "ANON_OSF_LINK"),
     (r"https?://osf\.io/zemhp\S*", "ANON_OSF_LINK"),
@@ -65,7 +74,10 @@ REWRITES = [
 FORBIDDEN = {
     "author surname": r"Cochran",
     "author given name": r"\bTheodore\b",
-    "home directory": r"/(?:home|Users)/(?!path/to)[A-Za-z0-9._-]+",
+    # Home-directory paths are deliberately NOT forbidden. The artifacts embed
+    # run-machine paths carrying a first name, which is not a unique identifier,
+    # and scrubbing them would break hash verification against the deposit for
+    # no anonymity gain. Author decision, 2026-07-31.
     "org name": r"ai4altruism|AI for Altruism|\bA4A\b",
     "public OSF DOI": r"10\.17605|ZEMHP",
     # An OSF link is a leak only when it lacks a view_only token: the bare node
@@ -107,16 +119,31 @@ def stage(dest: Path, anon_link: str, with_artifacts: bool) -> list[str]:
             (dest / "results").mkdir(exist_ok=True)
             (dest / "results" / man.name).write_text(rewrite(man.read_text(), anon_link))
             written.append("results/ARTIFACTS_MANIFEST.txt")
+        # Artifacts are copied verbatim, then hash-checked against the manifest,
+        # so the supplement's copies are the deposited copies and a reviewer's
+        # verification succeeds against either.
+        expected = dict(re.findall(r"##\s+(\S+).*?sha256:\s+([0-9a-f]{64})",
+                                   man.read_text() if man.exists() else "", re.S))
+        verified = mismatched = 0
         for src in sorted(results_src.rglob("*.json")):
             rel = src.relative_to(results_src)
             out = dest / "results" / rel
             out.parent.mkdir(parents=True, exist_ok=True)
-            # Artifacts are JSON: rewrite as text so embedded run paths are
-            # scrubbed, then re-serialize to confirm it is still valid JSON.
-            cleaned = rewrite(src.read_text(), anon_link)
-            json.loads(cleaned)
-            out.write_text(cleaned)
+            body = src.read_bytes()
+            json.loads(body)  # a corrupt artifact fails the build, not review
+            out.write_bytes(body)
+            want = expected.get(str(rel)) or expected.get(rel.name)
+            if want:
+                if hashlib.sha256(body).hexdigest() == want:
+                    verified += 1
+                else:
+                    mismatched += 1
+                    print(f"  HASH MISMATCH: {rel}", file=sys.stderr)
             written.append(f"results/{rel}")
+        print(f"  artifacts: {verified} hash-verified against the manifest, "
+              f"{mismatched} mismatched")
+        if mismatched:
+            raise SystemExit("refusing to build: deposited artifact hashes do not match")
 
     return written
 
