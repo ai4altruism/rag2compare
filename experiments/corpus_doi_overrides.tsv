@@ -1,0 +1,11 @@
+# Manually confirmed DOIs, applied by build_doi_manifest.py.
+# Automated resolution cannot settle every row: corpus.yaml records abbreviated
+# titles, some papers are not indexed by Crossref or arXiv, and a longer
+# published title that merely begins with the corpus title is often a different
+# paper. Rather than hand-edit the generated manifest, which the next rebuild
+# would silently discard, record confirmed DOIs here with the evidence.
+#
+# Columns: title <TAB> doi <TAB> note
+# `title` must match corpus.yaml exactly.
+title	doi	note
+Label-Only Membership Inference Attacks	10.48550/arXiv.2007.14321	Confirmed 2026-07-31 against arXiv metadata: Choquette-Choo, Tramer, Carlini, Papernot, 2020, title exact. The resolver had matched "Label-Only Membership Inference Attack against Node-Level Graph Neural Networks", a different paper sharing the title prefix; the author check flagged it.
