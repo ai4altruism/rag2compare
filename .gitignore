@@ -49,3 +49,7 @@ OSF Registration - LLM Wiki versus RAG.pdf
 # OS
 .DS_Store
 Thumbs.db
+
+# Supplementary-material archive: regenerable from experiments/build_supplement.py
+# (the script writes here by default). Never committed; it ships to OpenReview.
+supplement.zip
