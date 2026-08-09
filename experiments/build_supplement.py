@@ -39,6 +39,11 @@ PACKAGE = [
     "run_claim_grounding_decomp.py", "run_decomp_rag.py",
     "analyze_decomp_dual_judge.py", "build_doi_manifest.py",
     "fetch_papers.py",
+    # Added for the TMLR submission: the agreement statistics reported in the
+    # IRR section, and the H3a reconstruction, which a reviewer could not
+    # otherwise reproduce from the deposit (the components are not in the
+    # deposited aggregate).
+    "analyze_irr_stats.py", "reconstruct_h3a.py", "h3a_ingest_components.tsv",
 ]
 # Note: this script is deliberately NOT in PACKAGE. It carries the identifying
 # strings it scrubs, as its own rewrite and forbidden-pattern tables, so
