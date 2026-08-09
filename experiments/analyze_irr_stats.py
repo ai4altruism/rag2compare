@@ -27,6 +27,8 @@ JUDGED = RESULTS / "judged-20260506T225645Z.json"
 RAG_RUN = RESULTS / "run-20260506T221602Z.json"
 WIKI_RUN = RESULTS / "wiki-run-20260506T205500Z.json"
 GROUNDING = RESULTS / "grounding-20260508T155234Z.json"
+DECOMP_RUN = RESULTS / "run-decomp-20260509T001618Z.json"
+GROUNDING_DECOMP = RESULTS / "grounding-decomp-20260509T021528Z.json"
 
 # Registered subsets (mirrors run_preregistered_analysis.py).
 H1_QIDS = ["T3-mia-as-copyright-evidence", "T3-rwd-validity-for-side-effects",
@@ -260,17 +262,48 @@ def main():
         if row.get("cited_source_idx") not in (None, "", []):
             cited[row["system"]][row["qid"]] += 1
 
-    print(f"{'arm':<10}{'answers':>9}{'out_tok/ans':>13}{'claims/ans':>12}"
-          f"{'cited/ans':>11}{'cited%':>9}")
-    for name, run, key in (("RAG", rag, "rag"), ("Wiki", wiki, "wiki")):
+    # Answer length must be measured on the answer, not on token telemetry.
+    # completion_tokens counts generation across the WHOLE pipeline: the wiki's
+    # 30-turn browsing loop and decomp-RAG's per-sub-question calls both emit
+    # far more than the answer the judges read, and thinking tokens are never
+    # shown to a judge at all. Using it as "answer length" overstates the wiki
+    # gap by roughly 3x. Words and characters of the answer text are what a
+    # judge actually sees.
+    decomp = json.loads(DECOMP_RUN.read_text())
+    gdec = json.loads(GROUNDING_DECOMP.read_text())
+    for row in gdec["scored"]:
+        claims["decomp"][row["qid"]] += 1
+        if row.get("cited_source_idx") not in (None, "", []):
+            cited["decomp"][row["qid"]] += 1
+
+    print(f"{'arm':<12}{'answers':>8}{'words/ans':>11}{'chars/ans':>11}"
+          f"{'claims/ans':>12}{'cited/ans':>11}{'cited%':>9}{'gen_tok/ans':>13}")
+    lengths = {}
+    for name, run, key in (("single-RAG", rag, "rag"), ("decomp-RAG", decomp, "decomp"),
+                           ("Wiki", wiki, "wiki")):
         res = run["results"]
-        out_tok = [r["metadata"].get("completion_tokens", 0)
-                   + (r["metadata"].get("thinking_tokens") or 0) for r in res]
+        words = [len(r.get("answer", "").split()) for r in res]
+        chars = [len(r.get("answer", "")) for r in res]
+        gen = [r["metadata"].get("completion_tokens", 0)
+               + (r["metadata"].get("thinking_tokens") or 0) for r in res]
         cl = [claims[key][r["id"]] for r in res]
         ci = [cited[key][r["id"]] for r in res]
         tot_cl, tot_ci = sum(cl), sum(ci)
-        print(f"{name:<10}{len(res):>9}{mean(out_tok):>13.0f}{mean(cl):>12.1f}"
-              f"{mean(ci):>11.1f}{100.0 * tot_ci / tot_cl:>8.1f}%")
+        lengths[name] = (mean(words), mean(chars))
+        print(f"{name:<12}{len(res):>8}{mean(words):>11.0f}{mean(chars):>11.0f}"
+              f"{mean(cl):>12.1f}{mean(ci):>11.1f}"
+              f"{100.0 * tot_ci / tot_cl:>8.1f}%{mean(gen):>13.0f}")
+
+    w_wiki, c_wiki = lengths["Wiki"]
+    w_rag, c_rag = lengths["single-RAG"]
+    w_dec, c_dec = lengths["decomp-RAG"]
+    print()
+    print("  Visible-answer length ratios (what the judges saw):")
+    print(f"    wiki / single-RAG   {w_wiki / w_rag:.2f}x words, {c_wiki / c_rag:.2f}x chars")
+    print(f"    wiki / decomp-RAG   {w_wiki / w_dec:.2f}x words, {c_wiki / c_dec:.2f}x chars")
+    print(f"    decomp / single-RAG {w_dec / w_rag:.2f}x words")
+    print("  gen_tok/ans is pipeline generation cost, NOT answer length; it is")
+    print("  printed only to show how far the two diverge.")
     print()
     print("  Reproduction check against published figures: total claims should")
     print("  read RAG 150 / Wiki 316, and claims per answer 11.5 / 24.3.")
