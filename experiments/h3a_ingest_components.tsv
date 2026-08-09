@@ -1,0 +1,27 @@
+# Per-session token components behind the wiki-side ingest aggregate.
+#
+# Why this file exists: the deposited artifact wiki-ingest-20260506T211731Z.json
+# carries only totals.tokens_in, which sums three token classes that bill at
+# different rates (uncached input 1x, cache write 1.25x or 2x depending on TTL,
+# cache read ~0.1x). H3a needs a billable reading, so the aggregate alone does
+# not adjudicate it. These are the components that aggregate was built from,
+# transcribed from the build-cost record keyed to the four Claude Code sessions
+# that compiled the corpus on 2026-05-06.
+#
+# Source: wikikb/wiki/analyses/build-cost-2026-05-06.md, transcribed into
+# wikikb/experiments/run_ingest.py (lines 65-68), which emits only the sum.
+#
+# Verify with: python experiments/reconstruct_h3a.py
+# The four uncached_in and the class totals must reproduce the deposited
+# totals.tokens_in of 898,594,660 exactly, to the token.
+#
+# Per-session cache_write / cache_read / output are recorded to the precision
+# the build-cost record carries (0.01M); the uncached_in column and the class
+# totals are exact. Session rows therefore reconcile to the totals row within
+# rounding, and it is the totals row that reconciles exactly to the artifact.
+session	uncached_in	cache_write	cache_read	output
+1e7548d8	971	5070000	132800000	2350000
+90769842	1135	3020000	390300000	800000
+0088cb9e	441	1850000	123400000	400000
+2f7ec7b7	2113	24450000	217700000	2740000
+TOTAL	4660	34390000	864200000	6290000
