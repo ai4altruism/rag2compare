@@ -23,6 +23,7 @@ import argparse
 import json
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import zipfile
@@ -94,7 +95,15 @@ def rewrite(text: str, anon_link: str) -> str:
 
 
 def stage(dest: Path, anon_link: str, with_artifacts: bool) -> list[str]:
-    dest.mkdir(parents=True, exist_ok=True)
+    # Mirror the repository layout (supplement/experiments/...) rather than
+    # flattening. Every shipped script resolves its inputs as
+    # Path(__file__).parent.parent / "experiments" / ..., so a flat staging
+    # directory puts the scripts one level too shallow and every one of them
+    # dies on FileNotFoundError in the reviewer's hands. Reproducing from a
+    # clone does not catch this, because a clone already has this layout;
+    # the package has to be tested as extracted.
+    expdir = dest / "experiments"
+    expdir.mkdir(parents=True, exist_ok=True)
     written = []
 
     for name in PACKAGE:
@@ -102,26 +111,26 @@ def stage(dest: Path, anon_link: str, with_artifacts: bool) -> list[str]:
         if not src.exists():
             print(f"  warning: {name} missing, skipped", file=sys.stderr)
             continue
-        (dest / name).write_text(rewrite(src.read_text(), anon_link))
-        written.append(name)
+        (expdir / name).write_text(rewrite(src.read_text(), anon_link))
+        written.append(f"experiments/{name}")
 
     if with_artifacts:
         results_src = EXP / "results"
         man = results_src / "ARTIFACTS_MANIFEST.txt"
         if man.exists():
-            (dest / "results").mkdir(exist_ok=True)
-            (dest / "results" / man.name).write_text(rewrite(man.read_text(), anon_link))
-            written.append("results/ARTIFACTS_MANIFEST.txt")
+            (expdir / "results").mkdir(exist_ok=True)
+            (expdir / "results" / man.name).write_text(rewrite(man.read_text(), anon_link))
+            written.append("experiments/results/ARTIFACTS_MANIFEST.txt")
         for src in sorted(results_src.rglob("*.json")):
             rel = src.relative_to(results_src)
-            out = dest / "results" / rel
+            out = expdir / "results" / rel
             out.parent.mkdir(parents=True, exist_ok=True)
             # Artifacts are JSON: rewrite as text so embedded run paths are
             # scrubbed, then re-serialize to confirm it is still valid JSON.
             cleaned = rewrite(src.read_text(), anon_link)
             json.loads(cleaned)
             out.write_text(cleaned)
-            written.append(f"results/{rel}")
+            written.append(f"experiments/results/{rel}")
 
     return written
 
@@ -137,6 +146,34 @@ def scan(root: Path) -> list[tuple[str, str, str]]:
                 line = text.count("\n", 0, m.start()) + 1
                 findings.append((str(p.relative_to(root)), f"{label} (line {line})", m.group(0)))
     return findings
+
+
+# Scripts that are dependency-free and read only deposited artifacts, so they
+# can be executed against the staged tree as a reviewer would. The rest need
+# pymc or live API credentials and cannot be smoke-tested here.
+SMOKE = ["analyze_irr_stats.py", "reconstruct_h3a.py"]
+
+
+def smoke(root: Path) -> list[tuple[str, str]]:
+    """Run the runnable scripts from the staged package.
+
+    The package is what reviewers get, and it has a different directory shape
+    from the repository. Verifying reproducibility in a clone therefore proves
+    nothing about the artifact that ships. This runs them where they will
+    actually land.
+    """
+    failures = []
+    for name in SMOKE:
+        target = root / "experiments" / name
+        if not target.exists():
+            failures.append((name, "not present in the staged package"))
+            continue
+        proc = subprocess.run([sys.executable, name], cwd=target.parent,
+                              capture_output=True, text=True, timeout=180)
+        if proc.returncode != 0:
+            tail = (proc.stderr.strip().splitlines() or ["(no stderr)"])[-1]
+            failures.append((name, tail))
+    return failures
 
 
 def main() -> int:
@@ -163,6 +200,16 @@ def main() -> int:
         print("\nAdd a rewrite rule or remove the file, then rebuild.")
         return 1
     print("  anonymization scan: clean")
+
+    if args.with_artifacts:
+        failures = smoke(staging)
+        if failures:
+            print(f"\nREFUSING TO BUILD: {len(failures)} script(s) do not run from "
+                  f"the staged package")
+            for name, err in failures:
+                print(f"  {name}: {err}")
+            return 1
+        print("  smoke test: dependency-free scripts run from the package")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(args.out, "w", zipfile.ZIP_DEFLATED) as z:
