@@ -45,6 +45,15 @@ PACKAGE = [
     # otherwise reproduce from the deposit (the components are not in the
     # deposited aggregate).
     "analyze_irr_stats.py", "reconstruct_h3a.py", "h3a_ingest_components.tsv",
+    # Added for the 2026-09 revision: the claim-level rescoring that corrects
+    # the 1,500-character passage cut, the script that recomputes every
+    # claim-level figure, and the human check of the scorer (Appendix H).
+    "rescore_claim_grounding.py", "claim_level_figures.py",
+    "human_validation/README.md", "human_validation/PRESPECIFICATION.md",
+    "human_validation/sample_claims.py", "human_validation/analyze_claims.py",
+    "human_validation/posthoc_claims.py",
+    "human_validation/labels/response_form_1.csv",
+    "human_validation/labels/response_form_2.csv",
 ]
 # Note: this script is deliberately NOT in PACKAGE. It carries the identifying
 # strings it scrubs, as its own rewrite and forbidden-pattern tables, so
@@ -85,7 +94,7 @@ FORBIDDEN = {
     "private wiki repo": r"\boffload\b",
 }
 
-TEXT_SUFFIXES = {".md", ".py", ".yaml", ".yml", ".tsv", ".txt", ".json"}
+TEXT_SUFFIXES = {".md", ".py", ".yaml", ".yml", ".tsv", ".txt", ".json", ".csv"}
 
 
 def rewrite(text: str, anon_link: str) -> str:
@@ -111,6 +120,7 @@ def stage(dest: Path, anon_link: str, with_artifacts: bool) -> list[str]:
         if not src.exists():
             print(f"  warning: {name} missing, skipped", file=sys.stderr)
             continue
+        (expdir / name).parent.mkdir(parents=True, exist_ok=True)
         (expdir / name).write_text(rewrite(src.read_text(), anon_link))
         written.append(f"experiments/{name}")
 
