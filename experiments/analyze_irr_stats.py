@@ -26,9 +26,19 @@ RESULTS = ROOT / "experiments" / "results"
 JUDGED = RESULTS / "judged-20260506T225645Z.json"
 RAG_RUN = RESULTS / "run-20260506T221602Z.json"
 WIKI_RUN = RESULTS / "wiki-run-20260506T205500Z.json"
-GROUNDING = RESULTS / "grounding-20260508T155234Z.json"
-DECOMP_RUN = RESULTS / "run-decomp-20260509T001618Z.json"
-GROUNDING_DECOMP = RESULTS / "grounding-decomp-20260509T021528Z.json"
+
+
+def _artifact(name: str) -> Path:
+    """Post-hoc artifacts sit in results/post-hoc/ in the OSF deposit and in
+    the supplement built from it, and at the results root in older checkouts.
+    Accept either, so the script runs from both."""
+    flat = RESULTS / name
+    return flat if flat.exists() else RESULTS / "post-hoc" / name
+
+
+GROUNDING = _artifact("grounding-20260508T155234Z.json")
+DECOMP_RUN = _artifact("run-decomp-20260509T001618Z.json")
+GROUNDING_DECOMP = _artifact("grounding-decomp-20260509T021528Z.json")
 
 # Registered subsets (mirrors run_preregistered_analysis.py).
 H1_QIDS = ["T3-mia-as-copyright-evidence", "T3-rwd-validity-for-side-effects",
